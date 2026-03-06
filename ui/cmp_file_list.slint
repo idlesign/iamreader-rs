@@ -1,0 +1,263 @@
+import { VerticalBox, HorizontalBox, ListView } from "std-widgets.slint";
+import { StatusIndicators } from "cmp_status_indicators.slint";
+
+export struct FileInfo {
+    index: int,
+    name: string,
+    path: string,
+    markers: string,
+    duration: string,
+    start-time: string,
+    size: string,
+    is-recording: bool,
+    is-playing: bool,
+    title: string,
+    hint: string,
+}
+
+export component FileList inherits Rectangle {
+    in property <[FileInfo]> files: [];
+    in-out property <int> current-index: -1;
+    in-out property <length> scroll-viewport-y: 0px;
+    in property <string> total-files: "";
+    in property <string> total-duration: "";
+    in property <string> total-size: "";
+    in property <bool> is-recording: false;
+    
+    callback file-clicked(int);
+    callback file-double-clicked(int);
+    callback dialog-chunk-request-open(int);
+
+    private property <bool> recording-blink: false;
+    
+    background: #f5f5f5;
+    border-width: 1px;
+    border-color: #ccc;
+    
+    Timer {
+        interval: 500ms;
+        running: root.is-recording;
+        triggered => {
+            root.recording-blink = !root.recording-blink;
+        }
+    }
+    
+    VerticalBox {
+        listview := ListView {
+            preferred-height: 100%;
+            viewport-y <=> root.scroll-viewport-y;
+            for file[index] in files: Rectangle {
+                width: parent.width;
+                height: 30px;
+                background: current-index == index ? #d0e8ff : #f5f5f5;
+                border-width: 1px;
+                border-color: #ccc;
+
+                TouchArea {
+                    width: 100%;
+                    height: 100%;
+                    clicked => {
+                        root.file-clicked(index);
+                    }
+                    double-clicked => {
+                        root.file-double-clicked(index);
+                    }
+                }
+
+                HorizontalBox {
+                    padding-left: 10px;
+                    padding-right: 10px;
+                    horizontal-stretch: 1;
+                    vertical-stretch: 1;
+                    // Индекс — фиксированная ширина
+                    Rectangle {
+                        preferred-width: 50px;
+                        min-width: 50px;
+                        clip: true;
+                        Text {
+                            text: file.index + ".";
+                            color: #333;
+                            font-family: "Ubuntu Mono";
+                            font-size: 12px;
+                            vertical-alignment: center;
+                            horizontal-alignment: left;
+                        }
+                    }
+                    // Гибкая область: title, markers, duration, start-time, name, size (доли 38:10:10:10:14:6)
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        min-width: 0;
+                        clip: true;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * 38 / 88;
+                            height: parent.height;
+                            clip: true;
+                            Text {
+                                text: file.title;
+                                width: parent.width;
+                                color: #333;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: left;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle {
+                            x: parent.width * 38 / 88;
+                            width: parent.width * 10 / 88;
+                            height: parent.height;
+                            clip: true;
+                            Text {
+                                text: file.markers;
+                                width: parent.width;
+                                color: #666;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                horizontal-alignment: left;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle {
+                            x: parent.width * 48 / 88;
+                            width: parent.width * 10 / 88;
+                            height: parent.height;
+                            clip: true;
+                            Text {
+                                text: file.duration;
+                                color: #333;
+                                font-family: "Ubuntu Mono";
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle {
+                            x: parent.width * 58 / 88;
+                            width: parent.width * 10 / 88;
+                            height: parent.height;
+                            clip: true;
+                            Text {
+                                text: file.start-time;
+                                color: #333;
+                                font-family: "Ubuntu Mono";
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle {
+                            x: parent.width * 68 / 88;
+                            width: parent.width * 14 / 88;
+                            height: parent.height;
+                            clip: true;
+                            Text {
+                                text: file.name;
+                                color: #333;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: left;
+                                overflow: elide;
+                            }
+                        }
+                        Rectangle {
+                            x: parent.width * 82 / 88;
+                            width: parent.width * 6 / 88;
+                            height: parent.height;
+                            clip: true;
+                            Text {
+                                text: file.size;
+                                color: #333;
+                                font-family: "Ubuntu Mono";
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                    // Индикаторы — фиксированная ширина, всегда в видимой области
+                    StatusIndicators {
+                        is-recording: file.is-recording;
+                        is-playing: file.is-playing;
+                    }
+                }
+            }
+        }
+        // Суммирующая строка - всегда видна
+        Rectangle {
+            height: 30px;
+            background: #e8e8e8;
+            border-width: 1px;
+            border-color: #aaa;
+            
+            HorizontalBox {
+                padding-left: 10px;
+                padding-right: 10px;
+                horizontal-stretch: 1;
+                Rectangle {
+                    preferred-width: 50px;
+                    min-width: 50px;
+                    clip: true;
+                        Text {
+                        text: total-files;
+                        color: #333;
+                        font-family: "Ubuntu Mono";
+                        font-size: 12px;
+                        font-weight: 700;
+                        vertical-alignment: center;
+                        horizontal-alignment: left;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                    min-width: 0;
+                    clip: true;
+                    Rectangle { x: 0; width: parent.width * 38 / 88; height: parent.height; }
+                    Rectangle { x: parent.width * 38 / 88; width: parent.width * 10 / 88; height: parent.height; }
+                    Rectangle {
+                        x: parent.width * 48 / 88;
+                        width: parent.width * 10 / 88;
+                        height: parent.height;
+                        clip: true;
+                        Text {
+                            text: total-duration;
+                            color: #333;
+                            font-family: "Ubuntu Mono";
+                            font-size: 12px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            overflow: elide;
+                        }
+                    }
+                    Rectangle { x: parent.width * 58 / 88; width: parent.width * 10 / 88; height: parent.height; }
+                    Rectangle {
+                        x: parent.width * 68 / 88;
+                        width: parent.width * 20 / 88;
+                        height: parent.height;
+                        clip: true;
+                        Text {
+                            text: total-size;
+                            color: #333;
+                            font-family: "Ubuntu Mono";
+                            font-size: 12px;
+                            font-weight: 700;
+                            vertical-alignment: center;
+                            horizontal-alignment: right;
+                            overflow: elide;
+                        }
+                    }
+                }
+                Rectangle {
+                    preferred-width: 24px;
+                    min-width: 24px;
+                    max-width: 24px;
+                }
+            }
+        }
+    }
+}
+

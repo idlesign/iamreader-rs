@@ -1,0 +1,92 @@
+import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+import { DialogHeader, DialogSeparator, DialogSpacer } from "cmp_dialog_header.slint";
+import { TextInputField, TextInputFieldMultiline } from "cmp_text_input.slint";
+import { ButtonBar } from "cmp_button_bar.slint";
+
+export component ChunkSettingsDialog inherits Rectangle {
+    width: 500px;
+    height: 400px;
+    background: #ffffff;
+    border-width: 2px;
+    border-color: #333;
+    
+    in-out property <string> title: "";
+    in-out property <string> author: "";
+    in-out property <string> year: "";
+    in-out property <string> hint: "";
+    
+    callback save();
+    callback cancel();
+    
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { }
+    }
+    VerticalBox {
+        height: 100%;
+        padding: 20px;
+        spacing: 0px;
+        
+        DialogHeader {
+            title: "Chunk settings";
+            cancel => {
+                root.cancel();
+            }
+        }
+        
+        DialogSeparator {}
+        
+        ScrollView {
+            preferred-height: 100%;
+            VerticalBox {
+                spacing: 0px;
+                DialogSpacer {}
+
+                HorizontalBox {
+                    spacing: 10px;
+                    TextInputField {
+                        label: "Title:";
+                        text <=> root.title;
+                        field-height: 30;
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    TextInputField {
+                        label: "Author:";
+                        text <=> root.author;
+                        field-height: 30;
+                        width: 45%;
+                        min-width: 0;
+                    }
+                    TextInputField {
+                        label: "Year:";
+                        text <=> root.year;
+                        field-height: 30;
+                        width: 45%;
+                        min-width: 0;
+                    }
+                }
+
+                HorizontalBox {
+                    spacing: 10px;
+                    TextInputFieldMultiline {
+                        label: "Hint:";
+                        text <=> root.hint;
+                        field-height: 60;
+                    }
+                }
+                
+                DialogSpacer {}
+            }
+        }
+        
+        ButtonBar {
+            save-clicked => {
+                root.save();
+            }
+        }
+    }
+}

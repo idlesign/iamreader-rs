@@ -1,0 +1,36 @@
+import { HorizontalBox } from "std-widgets.slint";
+
+export component StatusIndicators inherits Rectangle {
+    in property <bool> is-recording: false;
+    in property <bool> is-playing: false;
+    
+    preferred-width: 24px;
+    min-width: 24px;
+    max-width: 24px;
+    clip: true;
+    
+    HorizontalBox {
+        alignment: center;
+        vertical-stretch: 1;
+        spacing: 3px;
+        // Индикатор записи для временной записи
+        Rectangle {
+            width: 7px;
+            height: 7px;
+            background: root.is-recording ? #f00 : transparent;
+            border-radius: 3.5px;
+            visible: root.is-recording;
+        }
+        // Индикатор воспроизведения
+        Rectangle {
+            width: 7px;
+            height: 7px;
+            background: root.is-playing ? #0f0 : transparent;
+            border-radius: 1px;
+            visible: root.is-playing;
+        }
+    }
+}
+
+
+

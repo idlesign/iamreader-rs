@@ -1,0 +1,34 @@
+[package]
+name = "iamreader"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[build-dependencies]
+chrono = "0.4"
+slint-build = { version = "1.14" }
+
+[dependencies]
+slint = { version = "1.14", features = ["std"] }
+cpal = "0.15"
+hound = "3.5"
+rodio = "0.18"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+crossbeam-channel = "0.5"
+anyhow = "1.0"
+chrono = "0.4"
+libc = "0.2"
+ctrlc = "3.5"
+whisper-rs = "0.15"
+num_cpus = "1.0"
+mp3lame-encoder = "0.2"
+id3 = "1.16"
+rust-embed = "8.9"
+ort = "2.0.0-rc.11"
+ndarray = "0.16"
+realfft = "3.3"
+num-complex = "0.4"
+clap = { version = "4", features = ["derive"] }
+

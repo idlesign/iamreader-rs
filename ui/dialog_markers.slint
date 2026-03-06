@@ -1,0 +1,250 @@
+import { VerticalBox, HorizontalBox, Switch, ComboBox, Button, ScrollView } from "std-widgets.slint";
+import { DialogHeader, DialogSeparator, DialogSpacer } from "cmp_dialog_header.slint";
+import { TextInputField } from "cmp_text_input.slint";
+import { ButtonBar } from "cmp_button_bar.slint";
+import { SelectableList } from "cmp_selectable_list.slint";
+import { SectionHeader } from "cmp_section_header.slint";
+
+export component MarkerSettingsDialog inherits Rectangle {
+    width: 900px;
+    height: 680px;
+    background: #ffffff;
+    border-width: 2px;
+    border-color: #333;
+    
+    in-out property <[string]> marker-list: [];
+    in-out property <int> selected-marker-index: -1;
+    in-out property <string> marker-title: "";
+    in-out property <string> marker-hint: "";
+    in-out property <string> marker-shortcut: "";
+    in-out property <string> marker-begin-audio: "";
+    in-out property <string> marker-begin-kind: "add";
+    in-out property <string> marker-begin-reduction: "";
+    in-out property <string> marker-begin-repeat: "1";
+    in-out property <string> marker-end-audio: "";
+    in-out property <string> marker-end-kind: "add";
+    in-out property <string> marker-end-reduction: "";
+    in-out property <string> marker-end-repeat: "1";
+    in-out property <bool> marker-section: false;
+    in-out property <string> new-marker-alias: "";
+    
+    callback marker-selected(int);
+    callback add-marker(string);
+    callback save(string, string, string, string, string, string, string, string, string, string, string, string, bool);
+    callback update-meta();
+    callback cancel();
+    
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { }
+    }
+    VerticalBox {
+        height: 100%;
+        padding: 20px;
+        spacing: 0px;
+        
+        DialogHeader {
+            title: "Markers";
+            cancel => {
+                root.cancel();
+            }
+        }
+        
+        DialogSeparator {}
+        
+        ScrollView {
+            preferred-height: 100%;
+            VerticalBox {
+                spacing: 0px;
+                DialogSpacer {}
+                
+                HorizontalBox {
+                    spacing: 10px;
+                    TextInputField {
+                        label: "New marker alias:";
+                        text <=> root.new-marker-alias;
+                        field-height: 30;
+                        min-width: 0;
+                    }
+                    Button {
+                        text: "Add";
+                        primary: true;
+                        clicked => {
+                            if (root.new-marker-alias != "") {
+                                root.add-marker(root.new-marker-alias);
+                                root.new-marker-alias = "";
+                            }
+                        }
+                    }
+                }
+                
+                DialogSpacer {}
+                
+                HorizontalBox {
+                    spacing: 20px;
+                    
+                    SelectableList {
+                        title: "Markers:";
+                        items <=> root.marker-list;
+                        selected-index <=> root.selected-marker-index;
+                        item-selected(index) => {
+                            root.marker-selected(index);
+                        }
+                    }
+                    
+                    VerticalBox {
+                        min-width: 0;
+                        spacing: 10px;
+                        
+                        HorizontalBox {
+                            spacing: 10px;
+                            TextInputField {
+                                label: "Title:";
+                                text <=> root.marker-title;
+                                field-height: 30;
+                            }
+                        }
+                        HorizontalBox {
+                            spacing: 10px;
+                            TextInputField {
+                                label: "Hint:";
+                                text <=> root.marker-hint;
+                                field-height: 30;
+                                width: 60%;
+                                min-width: 0;
+                            }
+                            TextInputField {
+                                label: "Shortcut (0-9):";
+                                text <=> root.marker-shortcut;
+                                field-height: 30;
+                                width: 5%;
+                                min-width: 0;
+                            }
+                        }
+                        
+                        HorizontalBox {
+                            spacing: 10px;
+                            Switch {
+                                text: "Section";
+                                checked <=> root.marker-section;
+                            }
+                        }
+                        
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text {
+                                text: "Begin:";
+                                font-size: 12px;
+                                width: 60px;
+                                vertical-alignment: center;
+                            }
+                            TextInputField {
+                                label: "Audio:";
+                                text <=> root.marker-begin-audio;
+                                field-height: 30;
+                                width: 20%;
+                                min-width: 0;
+                            }
+                            TextInputField {
+                                label: "Reduction (%):";
+                                text <=> root.marker-begin-reduction;
+                                field-height: 30;
+                                width: 5%;
+                                min-width: 0;
+                            }
+                            TextInputField {
+                                label: "Repeat:";
+                                text <=> root.marker-begin-repeat;
+                                field-height: 30;
+                                width: 5%;
+                                min-width: 0;
+                            }
+                            Text {
+                                text: "Kind:";
+                                font-size: 12px;
+                                width: 50px;
+                                vertical-alignment: center;
+                            }
+                            ComboBox {
+                                model: ["add", "underlay"];
+                                current-value: root.marker-begin-kind;
+                                selected(val) => {
+                                    root.marker-begin-kind = val;
+                                }
+                                width: 25%;
+                                min-width: 0;
+                            }
+                        }
+                        
+                        HorizontalBox {
+                            spacing: 10px;
+                            Text {
+                                text: "End:";
+                                font-size: 12px;
+                                width: 60px;
+                                vertical-alignment: center;
+                            }
+                            TextInputField {
+                                label: "Audio:";
+                                text <=> root.marker-end-audio;
+                                field-height: 30;
+                                width: 20%;
+                                min-width: 0;
+                            }
+                            TextInputField {
+                                label: "Reduction (%):";
+                                text <=> root.marker-end-reduction;
+                                field-height: 30;
+                                width: 5%;
+                                min-width: 0;
+                            }
+                            TextInputField {
+                                label: "Repeat:";
+                                text <=> root.marker-end-repeat;
+                                field-height: 30;
+                                width: 5%;
+                                min-width: 0;
+                            }
+                            Text {
+                                text: "Kind:";
+                                font-size: 12px;
+                                width: 50px;
+                                vertical-alignment: center;
+                            }
+                            ComboBox {
+                                model: ["add", "underlay"];
+                                current-value: root.marker-end-kind;
+                                selected(val) => {
+                                    root.marker-end-kind = val;
+                                }
+                                width: 25%;
+                                min-width: 0;
+                            }
+                        }
+                    }
+                }
+                
+                DialogSpacer {}
+            }
+        }
+        
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+            Button {
+                text: "Update meta";
+                clicked => {
+                    root.update-meta();
+                }
+            }
+            ButtonBar {
+                save-clicked => {
+                    if (root.selected-marker-index >= 0 && root.selected-marker-index < root.marker-list.length) {
+                        root.save(root.marker-list[root.selected-marker-index], root.marker-title, root.marker-hint, root.marker-shortcut, root.marker-begin-audio, root.marker-begin-kind, root.marker-begin-reduction, root.marker-begin-repeat, root.marker-end-audio, root.marker-end-kind, root.marker-end-reduction, root.marker-end-repeat, root.marker-section);
+                    }
+                }
+            }
+        }
+    }
+}

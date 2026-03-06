@@ -1,0 +1,67 @@
+import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { DialogHeader, DialogSeparator } from "cmp_dialog_header.slint";
+
+export component DeleteChunkDialog inherits Rectangle {
+    width: 440px;
+    height: 180px;
+    background: #ffffff;
+    border-width: 2px;
+    border-color: #333;
+
+    in property <string> message: "";
+
+    callback confirm();
+    callback cancel();
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { }
+    }
+    VerticalBox {
+        height: 100%;
+        padding: 20px;
+        spacing: 0px;
+
+        DialogHeader {
+            title: "Delete recording?";
+            cancel => {
+                root.cancel();
+            }
+        }
+
+        DialogSeparator {}
+
+        Rectangle {
+            preferred-height: 100%;
+            VerticalBox {
+                padding-top: 12px;
+                padding-bottom: 12px;
+                Text {
+                    text: root.message;
+                    wrap: word-wrap;
+                }
+            }
+        }
+
+        HorizontalBox {
+            alignment: end;
+            spacing: 10px;
+
+            Button {
+                text: "Отменить";
+                primary: false;
+                clicked => {
+                    root.cancel();
+                }
+            }
+            Button {
+                text: "Delete";
+                primary: true;
+                clicked => {
+                    root.confirm();
+                }
+            }
+        }
+    }
+}

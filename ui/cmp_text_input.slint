@@ -1,0 +1,72 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component TextInputField inherits VerticalBox {
+    in property <string> label: "";
+    in-out property <string> text: "";
+    in property <int> field-height: 30;
+    
+    spacing: 2px;
+    
+    Text {
+        text: root.label;
+        font-size: 12px;
+    }
+    Rectangle {
+        border-width: 1px;
+        border-color: #999;
+        background: #fff;
+        height: root.field-height * 1px;
+        clip: true;
+        HorizontalBox {
+            padding-left: 5px;
+            padding-right: 5px;
+            Rectangle {
+                horizontal-stretch: 1;
+                min-width: 0;
+                clip: true;
+                TextInput {
+                    text <=> root.text;
+                    width: 100%;
+                    height: 100%;
+                }
+            }
+        }
+    }
+}
+
+export component TextInputFieldMultiline inherits VerticalBox {
+    in property <string> label: "";
+    in-out property <string> text: "";
+    in property <int> field-height: 60;
+    
+    spacing: 2px;
+    
+    Text {
+        text: root.label;
+        font-size: 12px;
+    }
+    Rectangle {
+        border-width: 1px;
+        border-color: #999;
+        background: #fff;
+        height: root.field-height * 1px;
+        clip: true;
+        VerticalBox {
+            padding-left: 5px;
+            padding-right: 5px;
+            padding-top: 5px;
+            padding-bottom: 5px;
+            Rectangle {
+                vertical-stretch: 1;
+                min-height: 0;
+                clip: true;
+                TextInput {
+                    text <=> root.text;
+                    width: 100%;
+                    height: 100%;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

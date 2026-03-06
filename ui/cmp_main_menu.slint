@@ -1,0 +1,52 @@
+import { HorizontalBox, Button } from "std-widgets.slint";
+
+export component MainMenu inherits Rectangle {
+    callback project-clicked();
+    callback markers-clicked();
+    callback toc-clicked();
+    callback compile-clicked();
+
+    height: 42px;
+    background: #e8e8e8;
+    border-width: 0px;
+    border-color: #ccc;
+
+    Rectangle {
+        x: 0px;
+        y: parent.height - 1px;
+        width: 100%;
+        height: 1px;
+        background: #ccc;
+    }
+
+    HorizontalBox {
+        padding-left: 10px;
+        spacing: 5px;
+
+        Button {
+            text: "Project (F5)";
+            clicked => {
+                root.project-clicked();
+            }
+        }
+        Button {
+            text: "Markers (F4)";
+            clicked => {
+                root.markers-clicked();
+            }
+        }
+        Button {
+            text: "TOC (F10)";
+            clicked => {
+                root.toc-clicked();
+            }
+        }
+        Button {
+            text: "Compile (F8)";
+            clicked => {
+                root.compile-clicked();
+            }
+        }
+    }
+}
+

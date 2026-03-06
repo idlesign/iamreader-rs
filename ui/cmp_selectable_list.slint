@@ -1,0 +1,63 @@
+import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+export component SelectableListItem inherits Rectangle {
+    in property <string> text: "";
+    in property <bool> selected: false;
+    callback clicked();
+    
+    height: 30px;
+    background: root.selected ? #d0e8ff : #f5f5f5;
+    border-width: 1px;
+    border-color: #ccc;
+    
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => {
+            root.clicked();
+        }
+        HorizontalBox {
+            padding-left: 5px;
+            Text {
+                text: root.text;
+                color: #333;
+                font-size: 12px;
+                vertical-alignment: center;
+                horizontal-alignment: left;
+            }
+        }
+    }
+}
+
+export component SelectableList inherits VerticalBox {
+    in property <string> title: "";
+    in property <[string]> items: [];
+    in-out property <int> selected-index: -1;
+    callback item-selected(int);
+    
+    width: 200px;
+    spacing: 10px;
+    
+    Text {
+        text: root.title;
+        font-size: 14px;
+        font-weight: 700;
+    }
+    
+    ScrollView {
+        preferred-height: 100%;
+        VerticalBox {
+            for item[index] in items: SelectableListItem {
+                text: item;
+                selected: root.selected-index == index;
+                clicked => {
+                    root.selected-index = index;
+                    root.item-selected(index);
+                }
+            }
+        }
+    }
+}
+
+
+

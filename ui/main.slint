@@ -1,0 +1,592 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+import "fonts/Ubuntu-Regular.ttf";
+import "fonts/Ubuntu-Bold.ttf";
+import "fonts/UbuntuMono.ttf";
+import "fonts/UbuntuMono-Italic.ttf";
+import { ChunkSettingsDialog } from "dialog_chunk.slint";
+import { MarkerSettingsDialog } from "dialog_markers.slint";
+import { MetaDialog } from "dialog_project.slint";
+import { TocDialog } from "dialog_toc.slint";
+import { ShortcutsDialog } from "dialog_shortcuts.slint";
+import { DeleteChunkDialog } from "dialog_delete_chunk.slint";
+import { WaveformWidget } from "cmp_waveform.slint";
+import { LevelIndicator } from "cmp_level_indicator.slint";
+import { FileList, FileInfo } from "cmp_file_list.slint";
+import { ModalOverlay } from "cmp_modal_overlay.slint";
+import { MetaBar } from "cmp_meta_bar.slint";
+import { TitleBar } from "cmp_title_bar.slint";
+import { HintBar } from "cmp_hint_bar.slint";
+import { CompileProgressDialog } from "cmp_compile_progress.slint";
+import { MainMenu } from "cmp_main_menu.slint";
+import { ModeIndicators } from "cmp_mode_indicators.slint";
+
+export component MainWindow inherits Window {
+    default-font-family: "Ubuntu";
+    preferred-width: 1200px;
+    preferred-height: 800px;
+    min-width: 400px;
+    min-height: 300px;
+    in property <string> window-title: "iamreader";
+    title: root.window-title;
+    icon: @image-url("imreader.png");
+    forward-focus: main-focus-scope;
+
+    in-out property <[float]> waveform-prev: [];
+    in-out property <[float]> waveform-current: [];
+    in-out property <int> waveform-current-window: 0;
+    in-out property <float> level: 0.0;
+    in-out property <float> playback-position: 0.0;
+    in property <[FileInfo]> file-list: [];
+    in-out property <int> current-file-index: -1;
+    in-out property <length> file-list-scroll-viewport-y: 0px;
+    in-out property <string> total-files: "";
+    in-out property <string> total-duration: "";
+    in-out property <string> total-size: "";
+    in-out property <bool> is-recording: false;
+    in-out property <string> meta-title: "";
+    in-out property <string> meta-author: "";
+    in-out property <string> meta-year: "";
+    in-out property <string> meta-hint: "";
+    in-out property <string> meta-reader: "";
+    in-out property <string> hintbox-current-start: "";
+    in-out property <string> hintbox-current-end: "";
+    in-out property <string> hintbox-prev-start: "";
+    in-out property <string> hintbox-prev-end: "";
+    in-out property <string> section-titles: "";
+    
+    in-out property <bool> dialog-project-open: false;
+    in-out property <string> dialog-project-title: "";
+    in-out property <string> dialog-project-author: "";
+    in-out property <string> dialog-project-year: "";
+    in-out property <string> dialog-project-hint: "";
+    in-out property <string> dialog-project-reader: "";
+    in-out property <string> dialog-project-format-audio: "wav";
+    in-out property <bool> dialog-project-normalize: true;
+    in-out property <string> dialog-project-cover: "cover.png";
+    in-out property <bool> dialog-project-section-split: false;
+    in-out property <bool> dialog-project-denoise: false;
+    in-out property <bool> dialog-chunk-open: false;
+    in-out property <int> dialog-chunk-file-index: -1;
+    in-out property <string> dialog-chunk-title: "";
+    in-out property <string> dialog-chunk-author: "";
+    in-out property <string> dialog-chunk-year: "";
+    in-out property <string> dialog-chunk-hint: "";
+    in-out property <bool> dialog-markers-open: false;
+    in-out property <[string]> dialog-markers-list: [];
+    in-out property <int> dialog-markers-selected-index: -1;
+    in-out property <string> dialog-markers-title: "";
+    in-out property <string> dialog-markers-hint: "";
+    in-out property <string> dialog-markers-shortcut: "";
+    in-out property <string> dialog-markers-begin-audio: "";
+    in-out property <string> dialog-markers-begin-kind: "add";
+    in-out property <string> dialog-markers-begin-reduction: "";
+    in-out property <string> dialog-markers-begin-repeat: "1";
+    in-out property <string> dialog-markers-end-audio: "";
+    in-out property <string> dialog-markers-end-kind: "add";
+    in-out property <string> dialog-markers-end-reduction: "";
+    in-out property <string> dialog-markers-end-repeat: "1";
+    in-out property <bool> dialog-markers-section: false;
+    in-out property <string> dialog-markers-new-alias: "";
+    in-out property <float> compile-progress: 0.0;
+    in-out property <string> compile-stage: "";
+    in-out property <string> dialog-compile-stages-text: "";
+    in-out property <float> dialog-compile-eta-secs: -1.0;
+    in-out property <bool> dialog-compile-cancel-enabled: true;
+    in-out property <bool> is-compiling: false;
+    in-out property <bool> dialog-toc-open: false;
+    in-out property <string> dialog-toc-list-text: "";
+    in-out property <bool> dialog-shortcuts-open: false;
+    in-out property <string> dialog-shortcuts-list-text: "";
+    in-out property <string> search-hint-query: "";
+    in-out property <string> recording-mode: "A";
+    in-out property <bool> dialog-delete-open: false;
+    in-out property <string> dialog-delete-text: "";
+    in-out property <int> dialog-delete-file-index: -1;
+
+    callback key-pressed(string);
+    callback search-hint-up(string);
+    callback search-hint-down(string);
+    callback add-marker-with-normalization(string);
+    callback window-closed();
+    callback dialog-project-save(string, string, string, string, string, string, bool, string, bool, bool);
+    callback file-clicked(int);
+    callback file-double-clicked(int);
+    callback dialog-chunk-save(int, string, string, string, string);
+    callback dialog-chunk-request-open(int);
+    callback dialog-chunk-cancel();
+    callback add-marker(string);
+    callback dialog-markers-request-open();
+    callback dialog-project-request-open();
+    callback compile();
+    callback dialog-compile-cancel();
+    callback dialog-markers-marker-selected(int);
+    callback dialog-markers-add-marker(string);
+    callback dialog-markers-save(string, string, string, string, string, string, string, string, string, string, string, string, bool);
+    callback dialog-markers-update-meta();
+    callback dialog-markers-cancel();
+    callback dialog-toc-request-open();
+    callback dialog-toc-cancel();
+    callback dialog-shortcuts-request-open();
+    callback dialog-shortcuts-cancel();
+    callback dialog-delete-confirm(int);
+    callback dialog-delete-cancel();
+
+    main-focus-scope := FocusScope {
+        init => { self.focus(); }
+
+        key-pressed(event) => {
+            // Обработка ESC для закрытия диалогов
+            if (event.text == Key.Escape) {
+                if (root.dialog-delete-open) {
+                    root.dialog-delete-cancel();
+                    root.dialog-delete-open = false;
+                    return accept;
+                }
+                if (root.dialog-shortcuts-open) {
+                    root.dialog-shortcuts-cancel();
+                    root.dialog-shortcuts-open = false;
+                    return accept;
+                }
+                if (root.dialog-toc-open) {
+                    root.dialog-toc-cancel();
+                    return accept;
+                }
+                if (root.dialog-markers-open) {
+                    root.dialog-markers-cancel();
+                    return accept;
+                }
+                if (root.dialog-chunk-open) {
+                    root.dialog-chunk-cancel();
+                    return accept;
+                }
+                if (root.dialog-project-open) {
+                    root.dialog-project-open = false;
+                    return accept;
+                }
+            }
+            
+            // Обработка функциональных клавиш F4, F5, F8
+            if (event.text == Key.F4) {
+                root.dialog-markers-request-open();
+                return accept;
+            }
+            if (event.text == Key.F5) {
+                root.dialog-project-request-open();
+                return accept;
+            }
+            if (event.text == Key.F8) {
+                root.compile();
+                return accept;
+            }
+            if (event.text == Key.F10) {
+                root.dialog-toc-request-open();
+                return accept;
+            }
+            if (event.text == Key.F1) {
+                root.dialog-shortcuts-request-open();
+                return accept;
+            }
+
+            // Обработка стрелок вверх и вниз
+            if (event.text == Key.UpArrow) {
+                // Стрелка вверх - альтернатива для next (f)
+                root.key-pressed("f");
+                return accept;
+            }
+            if (event.text == Key.DownArrow) {
+                // Стрелка вниз - альтернатива для prev (a)
+                root.key-pressed("a");
+                return accept;
+            }
+            
+            let key_text = event.text;
+            if (key_text == "0" || key_text == "1" || key_text == "2" || key_text == "3" ||
+                key_text == "4" || key_text == "5" || key_text == "6" || 
+                key_text == "7" || key_text == "8" || key_text == "9") {
+                root.add-marker-with-normalization(key_text);
+                return accept;
+            }
+            if (event.modifiers.control) {
+                root.key-pressed(key_text);
+                return accept;
+            } else {
+                // Передаем все остальные события в Rust код
+                root.key-pressed(key_text);
+                return accept;
+            }
+        }
+        
+        
+        VerticalBox {
+            HorizontalBox {
+                height: 42px;
+                MainMenu {
+                    height: 42px;
+                    project-clicked => {
+                        root.dialog-project-request-open();
+                    }
+                    markers-clicked => {
+                        root.dialog-markers-request-open();
+                    }
+                    toc-clicked => {
+                        root.dialog-toc-request-open();
+                    }
+                    compile-clicked => {
+                        root.compile();
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+                ModeIndicators {
+                    mode <=> root.recording-mode;
+                }
+            }
+
+            VerticalBox {
+                padding-left: 10px;
+                padding-right: 10px;
+
+                // Панель данных проекта и данные о последней главе — над графиками
+                MetaBar {
+                    meta-title <=> root.meta-title;
+                    meta-author <=> root.meta-author;
+                    meta-year <=> root.meta-year;
+                }
+                TitleBar {
+                    section-titles <=> root.section-titles;
+                }
+            }
+            
+            // Ряд: waveform и индикатор уровня
+            HorizontalBox {
+                height: 12.5%;
+                padding-left: 10px;
+                padding-right: 10px;
+                WaveformWidget {
+                    title: "Previous";
+                    waveform-data <=> waveform-prev;
+                    playback-position: 0.0;
+                    width: 25%;
+                }
+                WaveformWidget {
+                    title: "Current";
+                    waveform-data <=> waveform-current;
+                    playback-position <=> root.playback-position;
+                    window-samples <=> root.waveform-current-window;
+                    min-width: 0;
+                }
+                LevelIndicator {
+                    level <=> level;
+                    width: 50px;
+                }
+            }
+            
+            // Подсказки — под графиками
+            HintBar {
+                hint-start <=> root.hintbox-current-start;
+                hint-end <=> root.hintbox-current-end;
+                bold: true;
+            }
+            HintBar {
+                hint-start <=> root.hintbox-prev-start;
+                hint-end <=> root.hintbox-prev-end;
+            }
+            
+            // Панель поиска по hint
+            HorizontalBox {
+                height: 32px;
+                padding-left: 10px;
+                padding-right: 10px;
+                spacing: 6px;
+                Rectangle {
+                    background: #f0f0f0;
+                    border-width: 1px;
+                    border-color: #999;
+                    border-radius: 2px;
+                    min-width: 120px;
+                    horizontal-stretch: 1;
+                    height: 28px;
+                    HorizontalBox {
+                        padding-left: 6px;
+                        padding-right: 6px;
+                        TextInput {
+                            text <=> root.search-hint-query;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+                search-up-btn := TouchArea {
+                    width: 32px;
+                    height: 28px;
+                    Rectangle {
+                        background: search-up-btn.has-hover ? #ddd : #e8e8e8;
+                        border-width: 1px;
+                        border-color: #999;
+                        border-radius: 2px;
+                        width: 100%;
+                        height: 100%;
+                        Text {
+                            text: "↑";
+                            font-size: 16px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    clicked => {
+                        main-focus-scope.focus();
+                        root.search-hint-up(root.search-hint-query);
+                    }
+                }
+                search-down-btn := TouchArea {
+                    width: 32px;
+                    height: 28px;
+                    Rectangle {
+                        background: search-down-btn.has-hover ? #ddd : #e8e8e8;
+                        border-width: 1px;
+                        border-color: #999;
+                        border-radius: 2px;
+                        width: 100%;
+                        height: 100%;
+                        Text {
+                            text: "↓";
+                            font-size: 16px;
+                            font-weight: 700;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+                    clicked => {
+                        main-focus-scope.focus();
+                        root.search-hint-down(root.search-hint-query);
+                    }
+                }
+            }
+            
+            // Список файлов - занимает всё оставшееся место
+            file-list-focus := FocusScope {
+                // Перехват Delete только когда фокус в списке записей (не в поле поиска)
+                capture-key-pressed(event) => {
+                    if (event.text == Key.Delete) {
+                        root.key-pressed("Delete");
+                        return accept;
+                    }
+                    return reject;
+                }
+                key-pressed(event) => {
+                    root.key-pressed(event.text);
+                    return accept;
+                }
+                FileList {
+                    files <=> file-list;
+                    current-index <=> current-file-index;
+                    scroll-viewport-y <=> root.file-list-scroll-viewport-y;
+                    total-files <=> root.total-files;
+                    total-duration <=> root.total-duration;
+                    total-size <=> root.total-size;
+                    is-recording <=> root.is-recording;
+                    file-clicked(index) => {
+                        root.file-clicked(index);
+                        file-list-focus.focus();
+                    }
+                    file-double-clicked(index) => {
+                        root.file-double-clicked(index);
+                    }
+                    dialog-chunk-request-open(index) => {
+                        root.dialog-chunk-request-open(index);
+                    }
+                    width: 100%;
+                }
+            }
+        }
+        
+        // Модальный overlay для метаданных
+        ModalOverlay {
+            visible: root.dialog-project-open;
+        }
+        
+        // Модальный диалог метаданных
+        MetaDialog {
+            visible: root.dialog-project-open;
+            x: 200px;
+            y: 10px;
+            z: 100;
+            meta-title <=> root.dialog-project-title;
+            meta-author <=> root.dialog-project-author;
+            meta-year <=> root.dialog-project-year;
+            meta-hint <=> root.dialog-project-hint;
+            meta-reader <=> root.dialog-project-reader;
+            meta-format-audio <=> root.dialog-project-format-audio;
+            meta-normalize <=> root.dialog-project-normalize;
+            meta-cover <=> root.dialog-project-cover;
+            meta-section-split <=> root.dialog-project-section-split;
+            meta-denoise <=> root.dialog-project-denoise;
+            save => {
+                root.dialog-project-save(root.dialog-project-title, root.dialog-project-author, root.dialog-project-year, root.dialog-project-hint, root.dialog-project-reader, root.dialog-project-format-audio, root.dialog-project-normalize, root.dialog-project-cover, root.dialog-project-section-split, root.dialog-project-denoise);
+                root.dialog-project-open = false;
+                main-focus-scope.focus();
+            }
+            cancel => {
+                root.dialog-project-open = false;
+                main-focus-scope.focus();
+            }
+        }
+        
+        // Модальный overlay для настроек chunk
+        ModalOverlay {
+            visible: root.dialog-chunk-open;
+        }
+        
+        // Модальный диалог настроек chunk
+        ChunkSettingsDialog {
+            visible: root.dialog-chunk-open;
+            x: 100px;
+            y: 100px;
+            z: 100;
+            title <=> root.dialog-chunk-title;
+            author <=> root.dialog-chunk-author;
+            year <=> root.dialog-chunk-year;
+            hint <=> root.dialog-chunk-hint;
+            save => {
+                root.dialog-chunk-save(root.dialog-chunk-file-index, root.dialog-chunk-title, root.dialog-chunk-author, root.dialog-chunk-year, root.dialog-chunk-hint);
+                root.dialog-chunk-open = false;
+                main-focus-scope.focus();
+            }
+            cancel => {
+                root.dialog-chunk-cancel();
+                root.dialog-chunk-open = false;
+                main-focus-scope.focus();
+            }
+        }
+        
+        // Модальный overlay для диалога TOC
+        ModalOverlay {
+            visible: root.dialog-toc-open;
+        }
+
+        // Диалог списка секций
+        TocDialog {
+            visible: root.dialog-toc-open;
+            x: 100px;
+            y: 100px;
+            z: 100;
+            toc-list-text <=> root.dialog-toc-list-text;
+            cancel => {
+                root.dialog-toc-cancel();
+                root.dialog-toc-open = false;
+                main-focus-scope.focus();
+            }
+        }
+
+        // Модальный overlay для настроек маркеров
+        ModalOverlay {
+            visible: root.dialog-markers-open;
+        }
+        
+        // Модальный диалог настроек маркеров
+        MarkerSettingsDialog {
+            visible: root.dialog-markers-open;
+            x: 40px;
+            y: 40px;
+            z: 100;
+            marker-list <=> root.dialog-markers-list;
+            selected-marker-index <=> root.dialog-markers-selected-index;
+            marker-section <=> root.dialog-markers-section;
+            marker-title <=> root.dialog-markers-title;
+            marker-hint <=> root.dialog-markers-hint;
+            marker-shortcut <=> root.dialog-markers-shortcut;
+            marker-begin-audio <=> root.dialog-markers-begin-audio;
+            marker-begin-kind <=> root.dialog-markers-begin-kind;
+            marker-begin-reduction <=> root.dialog-markers-begin-reduction;
+            marker-begin-repeat <=> root.dialog-markers-begin-repeat;
+            marker-end-audio <=> root.dialog-markers-end-audio;
+            marker-end-kind <=> root.dialog-markers-end-kind;
+            marker-end-reduction <=> root.dialog-markers-end-reduction;
+            marker-end-repeat <=> root.dialog-markers-end-repeat;
+            new-marker-alias <=> root.dialog-markers-new-alias;
+            marker-selected(index) => {
+                root.dialog-markers-marker-selected(index);
+            }
+            add-marker(alias) => {
+                root.dialog-markers-add-marker(alias);
+            }
+            save => {
+                if (root.dialog-markers-selected-index >= 0 && root.dialog-markers-selected-index < root.dialog-markers-list.length) {
+                    root.dialog-markers-save(root.dialog-markers-list[root.dialog-markers-selected-index], root.dialog-markers-title, root.dialog-markers-hint, root.dialog-markers-shortcut, root.dialog-markers-begin-audio, root.dialog-markers-begin-kind, root.dialog-markers-begin-reduction, root.dialog-markers-begin-repeat, root.dialog-markers-end-audio, root.dialog-markers-end-kind, root.dialog-markers-end-reduction, root.dialog-markers-end-repeat, root.dialog-markers-section);
+                }
+                root.dialog-markers-open = false;
+                main-focus-scope.focus();
+            }
+            update-meta => {
+                root.dialog-markers-update-meta();
+            }
+            cancel => {
+                root.dialog-markers-cancel();
+                root.dialog-markers-open = false;
+                main-focus-scope.focus();
+            }
+        }
+        
+        // Модальный overlay для индикатора компиляции
+        ModalOverlay {
+            visible: root.is-compiling;
+        }
+        
+        // Диалог индикатора прогресса компиляции
+        CompileProgressDialog {
+            visible: root.is-compiling;
+            x: (parent.width - 400px) / 2;
+            y: (parent.height - 220px) / 2;
+            z: 100;
+            progress <=> root.compile-progress;
+            stage <=> root.compile-stage;
+            stages-text <=> root.dialog-compile-stages-text;
+            eta-secs <=> root.dialog-compile-eta-secs;
+            cancel-enabled <=> root.dialog-compile-cancel-enabled;
+            cancel => {
+                root.dialog-compile-cancel();
+            }
+        }
+
+        // Модальный overlay для справки по клавишам
+        ModalOverlay {
+            visible: root.dialog-shortcuts-open;
+        }
+
+        ShortcutsDialog {
+            visible: root.dialog-shortcuts-open;
+            x: (parent.width - 480px) / 2;
+            y: (parent.height - 420px) / 2;
+            z: 100;
+            shortcuts-list-text <=> root.dialog-shortcuts-list-text;
+            cancel => {
+                root.dialog-shortcuts-cancel();
+                root.dialog-shortcuts-open = false;
+                main-focus-scope.focus();
+            }
+        }
+
+        ModalOverlay {
+            visible: root.dialog-delete-open;
+        }
+
+        DeleteChunkDialog {
+            visible: root.dialog-delete-open;
+            x: (parent.width - 440px) / 2;
+            y: (parent.height - 180px) / 2;
+            z: 100;
+            message <=> root.dialog-delete-text;
+            confirm => {
+                root.dialog-delete-confirm(root.dialog-delete-file-index);
+                root.dialog-delete-open = false;
+                main-focus-scope.focus();
+            }
+            cancel => {
+                root.dialog-delete-cancel();
+                root.dialog-delete-open = false;
+                main-focus-scope.focus();
+            }
+        }
+    }
+}

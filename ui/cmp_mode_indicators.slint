@@ -1,0 +1,34 @@
+import { HorizontalBox } from "std-widgets.slint";
+
+export component ModeIndicators inherits Rectangle {
+    in property <string> mode: "A";
+
+    height: 42px;
+    min-width: 90px;
+    background: #e8e8e8;
+    border-width: 0px;
+
+    HorizontalBox {
+        alignment: center;
+        spacing: 4px;
+
+        Text {
+            text: "[A]";
+            color: root.mode == "A" ? #c00 : #000;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        Text {
+            text: "[U]";
+            color: root.mode == "U" ? #c00 : #000;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        Text {
+            text: "[I]";
+            color: root.mode == "I" ? #c00 : #000;
+            font-size: 14px;
+            font-weight: 500;
+        }
+    }
+}

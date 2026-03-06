@@ -1,0 +1,51 @@
+import { VerticalBox, HorizontalBox } from "std-widgets.slint";
+
+export component ToggleButton inherits Rectangle {
+    in property <string> label: "";
+    in property <bool> selected: false;
+    callback clicked();
+    
+    width: 80px;
+    height: 30px;
+    border-width: 1px;
+    border-color: root.selected ? #4CAF50 : #999;
+    background: root.selected ? #e8f5e9 : #fff;
+    
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+        Text {
+            text: root.label;
+            color: #333;
+            font-size: 12px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component ToggleButtonGroup inherits VerticalBox {
+    in property <string> label: "";
+    in property <string> value: "";
+    in property <[string]> options: [];
+    callback value-changed(string);
+    
+    spacing: 2px;
+    
+    Text {
+        text: root.label;
+        font-size: 12px;
+    }
+    HorizontalBox {
+        spacing: 5px;
+        for option in options: ToggleButton {
+            label: option;
+            selected: root.value == option;
+            clicked => {
+                root.value-changed(option);
+            }
+        }
+    }
+}
+

@@ -1,0 +1,27 @@
+import { HorizontalBox } from "std-widgets.slint";
+
+export component TitleBar inherits Rectangle {
+    in property <string> section-titles: "";
+    
+    height: 30px;
+    background: #f0f0f0;
+    border-width: 1px;
+    border-color: #ccc;
+    
+    HorizontalBox {
+        padding-left: 10px;
+        padding-right: 10px;
+        Rectangle {
+            min-width: 0;
+            clip: true;
+            Text {
+                text: root.section-titles;
+                color: #666;
+                font-size: 12px;
+                vertical-alignment: center;
+                horizontal-alignment: left;
+                overflow: elide;
+            }
+        }
+    }
+}

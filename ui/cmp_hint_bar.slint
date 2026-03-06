@@ -1,0 +1,54 @@
+import { HorizontalBox } from "std-widgets.slint";
+
+export component HintBar inherits Rectangle {
+    in property <string> hint-start: "";
+    in property <string> hint-end: "";
+    in property <bool> bold: false;
+    
+    height: 30px;
+    background: #f0f0f0;
+    border-width: 1px;
+    border-color: #ccc;
+    
+    // Весь блок hint по центру (начало + [...] + конец)
+    HorizontalBox {
+        padding-left: 10px;
+        padding-right: 10px;
+        alignment: center;
+        spacing: 2px;
+        Rectangle {
+            min-width: 0;
+            clip: true;
+            Text {
+                text: root.hint-start;
+                color: #666;
+                font-size: 12px;
+                font-weight: root.bold ? 700 : 400;
+                vertical-alignment: center;
+                horizontal-alignment: right;
+                overflow: elide;
+            }
+        }
+        Text {
+            text: "[...]";
+            color: #666;
+            font-size: 12px;
+            font-weight: root.bold ? 700 : 400;
+            vertical-alignment: center;
+            visible: root.hint-end != "";
+        }
+        Rectangle {
+            min-width: 0;
+            clip: true;
+            Text {
+                text: root.hint-end;
+                color: #666;
+                font-size: 12px;
+                font-weight: root.bold ? 700 : 400;
+                vertical-alignment: center;
+                horizontal-alignment: left;
+                overflow: elide;
+            }
+        }
+    }
+}

@@ -1,0 +1,112 @@
+import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
+
+export component CompileProgressDialog inherits Rectangle {
+    in property <float> progress: 0.0;
+    in property <string> stage: "";
+    in property <string> stages-text: "";
+    /// Оставшееся время в секундах; < 0 — не показывать
+    in property <float> eta-secs: -1.0;
+    /// Кнопка отмены активна только во время обработки; по завершении до закрытия диалога (4 с) — заблокирована
+    in property <bool> cancel-enabled: true;
+    callback cancel();
+
+    width: 400px;
+    height: 220px;
+    background: #ffffff;
+    border-width: 2px;
+    border-color: #333;
+
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { }
+    }
+    VerticalBox {
+        height: 100%;
+        padding: 20px;
+        spacing: 8px;
+
+        ScrollView {
+            preferred-height: 100%;
+            VerticalBox {
+                spacing: 8px;
+                Text {
+                    text: root.stages-text != "" ? root.stages-text : (root.stage != "" ? root.stage : "Compiling ...");
+                    font-size: 13px;
+                    wrap: word-wrap;
+                    color: #333;
+                }
+
+                Rectangle {
+                    height: 24px;
+                    border-width: 1px;
+                    border-color: #999;
+                    background: #f5f5f5;
+                    Rectangle {
+                        x: 0px;
+                        width: root.progress * parent.width;
+                        height: 100%;
+                        background: #4CAF50;
+                    }
+                }
+
+                HorizontalBox {
+                    alignment: center;
+                    spacing: 16px;
+                    Text {
+                        text: {
+                            let percent = Math.round(root.progress * 100);
+                            percent + "%"
+                        }
+                        font-size: 14px;
+                    }
+                    Text {
+                        text: root.eta-secs >= 0 ? "ETA " + format-eta(root.eta-secs) : "";
+                        font-size: 12px;
+                        color: #666;
+                    }
+                }
+
+                Rectangle {
+                    height: 36px;
+                    cancel-touch := TouchArea {
+                        width: 100%;
+                        height: 100%;
+                        enabled: root.cancel-enabled;
+                        clicked => {
+                            root.cancel();
+                        }
+                        Rectangle {
+                            width: 100%;
+                            height: 100%;
+                            background: !root.cancel-enabled ? #ccc : (cancel-touch.has-hover ? #e0e0e0 : #eee);
+                            border-width: 1px;
+                            border-color: #999;
+                            border-radius: 2px;
+                            Text {
+                                text: "Cancel";
+                                font-size: 14px;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    function pad2(v: int) -> string {
+        return v < 10 ? "0" + v : "" + v;
+    }
+    function format-eta(secs: float) -> string {
+        if (secs < 0) { return "—"; }
+        let s = Math.round(secs);
+        let h = Math.floor(s / 3600);
+        let m = Math.floor(Math.mod(s, 3600) / 60);
+        let sec = Math.mod(s, 60);
+        return pad2(h) + ":" + pad2(m) + ":" + pad2(sec);
+    }
+}
+
+
+

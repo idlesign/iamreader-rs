@@ -1,0 +1,173 @@
+import { VerticalBox, HorizontalBox, ComboBox, Switch, ScrollView } from "std-widgets.slint";
+import { DialogHeader, DialogSeparator, DialogSpacer } from "cmp_dialog_header.slint";
+import { TextInputField, TextInputFieldMultiline } from "cmp_text_input.slint";
+import { ButtonBar } from "cmp_button_bar.slint";
+import { SectionHeader } from "cmp_section_header.slint";
+
+export component MetaDialog inherits Rectangle {
+    width: 500px;
+    height: 760px;
+    background: #ffffff;
+    border-width: 2px;
+    border-color: #333;
+    
+    in-out property <string> meta-title: "";
+    in-out property <string> meta-author: "";
+    in-out property <string> meta-year: "";
+    in-out property <string> meta-hint: "";
+    in-out property <string> meta-reader: "";
+    in-out property <string> meta-format-audio: "wav";
+    in-out property <bool> meta-normalize: true;
+    in-out property <string> meta-cover: "cover.png";
+    in-out property <bool> meta-section-split: false;
+    in-out property <bool> meta-denoise: false;
+    
+    callback save();
+    callback cancel();
+    
+    TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => { }
+    }
+    VerticalBox {
+        height: 100%;
+        padding: 20px;
+        spacing: 0px;
+        
+        DialogHeader {
+            title: "Project Settings";
+            cancel => {
+                root.cancel();
+            }
+        }
+        
+        DialogSeparator {}
+        
+        ScrollView {
+            preferred-height: 100%;
+            VerticalBox {
+                spacing: 0px;
+
+                DialogSpacer {}
+
+                SectionHeader {
+                    text: "Original book data";
+                }
+
+                DialogSpacer {}
+                
+                TextInputField {
+                    label: "Title:";
+                    text <=> root.meta-title;
+                    field-height: 30;
+                }
+                
+                DialogSpacer {}
+                
+                TextInputField {
+                    label: "Author:";
+                    text <=> root.meta-author;
+                    field-height: 30;
+                }
+                
+                DialogSpacer {}
+                
+                TextInputField {
+                    label: "Published year:";
+                    text <=> root.meta-year;
+                    field-height: 30;
+                }
+
+                DialogSpacer {}
+
+                SectionHeader {
+                    text: "Reading info";
+                }
+
+                DialogSpacer {}
+                
+                TextInputFieldMultiline {
+                    label: "Hint:";
+                    text <=> root.meta-hint;
+                    field-height: 60;
+                }
+                
+                DialogSpacer {}
+                
+                TextInputField {
+                    label: "Reader:";
+                    text <=> root.meta-reader;
+                    field-height: 30;
+                }
+                
+                DialogSpacer {}
+                
+                SectionHeader {
+                    text: "Compile Settings";
+                }
+
+                DialogSpacer {}
+
+                TextInputField {
+                    label: "Cover:";
+                    text <=> root.meta-cover;
+                    field-height: 30;
+                }
+
+                DialogSpacer {}
+                
+                HorizontalBox {
+                    spacing: 10px;
+                    Text {
+                        text: "Format:";
+                        font-size: 12px;
+                        width: 100px;
+                        vertical-alignment: center;
+                    }
+                    ComboBox {
+                        model: ["wav", "mp3"];
+                        current-value <=> root.meta-format-audio;
+                        width: 150px;
+                    }
+                }
+
+                DialogSpacer {}
+                
+                HorizontalBox {
+                    spacing: 10px;
+                    Switch {
+                        text: "Normalize";
+                        checked <=> root.meta-normalize;
+                    }
+                }
+                
+                DialogSpacer {}
+                
+                HorizontalBox {
+                    spacing: 10px;
+                    Switch {
+                        text: "Section Split";
+                        checked <=> root.meta-section-split;
+                    }
+                }
+                
+                DialogSpacer {}
+                
+                HorizontalBox {
+                    spacing: 10px;
+                    Switch {
+                        text: "Denoise";
+                        checked <=> root.meta-denoise;
+                    }
+                }
+            }
+        }
+        
+        ButtonBar {
+            save-clicked => {
+                root.save();
+            }
+        }
+    }
+}

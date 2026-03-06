@@ -1,0 +1,19 @@
+import { HorizontalBox, Button } from "std-widgets.slint";
+
+export component ButtonBar inherits HorizontalBox {
+    callback save-clicked();
+
+    alignment: end;
+    spacing: 10px;
+
+    Button {
+        text: "Save";
+        primary: true;
+        clicked => {
+            root.save-clicked();
+        }
+    }
+}
+
+
+
