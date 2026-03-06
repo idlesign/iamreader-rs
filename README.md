@@ -99,6 +99,11 @@ https://github.com/idlesign/iamreader-rs
 
 Приложение тестировалось на Ubuntu 24.10.
 
+## Где взять
+
+* Исходный код здесь: https://github.com/idlesign/iamreader-rs
+* Готовые собранные версии доступны тут: https://github.com/idlesign/iamreader-rs/releases/
+
 
 ## Получение моделей AI
 
