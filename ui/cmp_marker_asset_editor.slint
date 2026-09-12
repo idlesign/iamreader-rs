@@ -1,0 +1,75 @@
+import { VerticalBox, HorizontalBox, ComboBox } from "std-widgets.slint";
+import { TextInputField } from "cmp_text_input.slint";
+
+export component MarkerAssetEditor inherits VerticalBox {
+    in property <string> title: "";
+    in property <bool> enabled: true;
+    in-out property <string> audio: "";
+    in-out property <string> kind: "add";
+    in-out property <string> reduction: "";
+    in-out property <string> repeat: "1";
+    in property <string> reduction-error: "";
+    in property <string> repeat-error: "";
+
+    padding: 0px;
+    spacing: 8px;
+    min-width: 0px;
+    vertical-stretch: 0;
+    alignment: start;
+
+    Text {
+        text: root.title;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1e293b;
+    }
+    TextInputField {
+        label: "Audio file";
+        text <=> root.audio;
+        enabled: root.enabled;
+        help-text: "Leave blank to disable this sound.";
+    }
+    HorizontalBox {
+        padding: 0px;
+        spacing: 8px;
+        height: 32px;
+        Text {
+            text: "Kind";
+            width: 80px;
+            font-size: 12px;
+            color: #334155;
+            vertical-alignment: center;
+        }
+        ComboBox {
+            model: ["add", "underlay"];
+            current-value: root.kind;
+            enabled: root.enabled;
+            min-width: 0px;
+            selected(value) => {
+                if root.enabled {
+                    root.kind = value;
+                }
+            }
+        }
+    }
+    HorizontalBox {
+        padding: 0px;
+        spacing: 12px;
+        TextInputField {
+            label: "Reduction (%)";
+            text <=> root.reduction;
+            enabled: root.enabled;
+            vertical-stretch: 1;
+            error-message: root.reduction-error;
+            help-text: root.kind == "add" ? "Only used for underlay." : "0–100; blank = 75.";
+        }
+        TextInputField {
+            label: "Repeat";
+            text <=> root.repeat;
+            enabled: root.enabled;
+            vertical-stretch: 1;
+            error-message: root.repeat-error;
+            help-text: root.kind == "add" ? "Blank = 1; 0 = off." : "Blank = 1; 0 = off; -1 = loop.";
+        }
+    }
+}

@@ -1,0 +1,36 @@
+import { HorizontalBox, ScrollView, Button } from "std-widgets.slint";
+
+export component ErrorBanner inherits Rectangle {
+    in property <string> message;
+    in property <bool> enabled: true;
+    callback dismiss();
+
+    height: 88px;
+    background: #fff0f0;
+    border-color: #b54b4b;
+    border-width: 1px;
+
+    HorizontalBox {
+        padding: 8px;
+        spacing: 8px;
+
+        error-scroll := ScrollView {
+            min-width: 0px;
+            min-height: 0px;
+            viewport-height: error-text.preferred-height;
+            horizontal-scrollbar-policy: always-off;
+            error-text := Text {
+                width: error-scroll.visible-width;
+                height: self.preferred-height;
+                text: root.message;
+                wrap: word-wrap;
+                color: #772525;
+            }
+        }
+        Button {
+            text: "Dismiss";
+            enabled: root.enabled;
+            clicked => { root.dismiss(); }
+        }
+    }
+}

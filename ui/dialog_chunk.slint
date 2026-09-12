@@ -1,5 +1,5 @@
 import { VerticalBox, HorizontalBox, ScrollView } from "std-widgets.slint";
-import { DialogHeader, DialogSeparator, DialogSpacer } from "cmp_dialog_header.slint";
+import { DialogHeader, DialogSeparator, DialogErrorMessage } from "cmp_dialog_header.slint";
 import { TextInputField, TextInputFieldMultiline } from "cmp_text_input.slint";
 import { ButtonBar } from "cmp_button_bar.slint";
 
@@ -7,17 +7,21 @@ export component ChunkSettingsDialog inherits Rectangle {
     width: 500px;
     height: 400px;
     background: #ffffff;
-    border-width: 2px;
-    border-color: #333;
-    
+    border-width: 1px;
+    border-color: #94a3b8;
+    border-radius: 6px;
+
+    in property <bool> busy: false;
+    in property <string> error-message: "";
     in-out property <string> title: "";
     in-out property <string> author: "";
     in-out property <string> year: "";
     in-out property <string> hint: "";
-    
+
     callback save();
     callback cancel();
-    
+    changed visible => { if root.visible { body.viewport-y = 0px; } }
+
     TouchArea {
         width: 100%;
         height: 100%;
@@ -25,68 +29,63 @@ export component ChunkSettingsDialog inherits Rectangle {
     }
     VerticalBox {
         height: 100%;
-        padding: 20px;
-        spacing: 0px;
-        
+        padding: 12px;
+        spacing: 8px;
+        min-width: 0px;
+
         DialogHeader {
-            title: "Chunk settings";
-            cancel => {
-                root.cancel();
-            }
+            title: "Chunk Settings";
+            enabled: !root.busy;
+            cancel => { root.cancel(); }
         }
-        
         DialogSeparator {}
-        
-        ScrollView {
-            preferred-height: 100%;
+        body := ScrollView {
+            min-height: 0px;
+            min-width: 0px;
+            viewport-width: self.visible-width;
+            horizontal-scrollbar-policy: always-off;
+            enabled: !root.busy;
             VerticalBox {
-                spacing: 0px;
-                DialogSpacer {}
-
-                HorizontalBox {
-                    spacing: 10px;
-                    TextInputField {
-                        label: "Title:";
-                        text <=> root.title;
-                        field-height: 30;
-                    }
+                width: body.visible-width;
+                padding: 0px;
+                padding-right: 12px;
+                spacing: 10px;
+                min-width: 0px;
+                alignment: start;
+                TextInputField {
+                    label: "Title";
+                    text <=> root.title;
+                    enabled: !root.busy;
                 }
-
                 HorizontalBox {
-                    spacing: 10px;
+                    padding: 0px;
+                    spacing: 12px;
                     TextInputField {
-                        label: "Author:";
+                        label: "Author";
                         text <=> root.author;
-                        field-height: 30;
-                        width: 45%;
-                        min-width: 0;
+                        enabled: !root.busy;
                     }
                     TextInputField {
-                        label: "Year:";
+                        label: "Year";
                         text <=> root.year;
-                        field-height: 30;
-                        width: 45%;
-                        min-width: 0;
+                        enabled: !root.busy;
+                        width: 104px;
                     }
                 }
-
-                HorizontalBox {
-                    spacing: 10px;
-                    TextInputFieldMultiline {
-                        label: "Hint:";
-                        text <=> root.hint;
-                        field-height: 60;
-                    }
+                TextInputFieldMultiline {
+                    label: "Hint";
+                    text <=> root.hint;
+                    enabled: !root.busy;
+                    field-height: 96;
                 }
-                
-                DialogSpacer {}
             }
         }
-        
+        if root.error-message != "": DialogErrorMessage { text: root.error-message; }
+        DialogSeparator {}
         ButtonBar {
-            save-clicked => {
-                root.save();
-            }
+            busy: root.busy;
+            save-clicked => { root.save(); }
+            cancel-clicked => { root.cancel(); }
         }
     }
 }

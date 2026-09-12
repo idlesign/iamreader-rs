@@ -19,6 +19,7 @@ import { HintBar } from "cmp_hint_bar.slint";
 import { CompileProgressDialog } from "cmp_compile_progress.slint";
 import { MainMenu } from "cmp_main_menu.slint";
 import { ModeIndicators } from "cmp_mode_indicators.slint";
+import { ErrorBanner } from "cmp_error_banner.slint";
 
 export component MainWindow inherits Window {
     default-font-family: "Ubuntu";
@@ -33,12 +34,15 @@ export component MainWindow inherits Window {
 
     in-out property <[float]> waveform-prev: [];
     in-out property <[float]> waveform-current: [];
+    in property <bool> waveform-current-loading: false;
+    in property <bool> waveform-prev-loading: false;
     in-out property <int> waveform-current-window: 0;
     in-out property <float> level: 0.0;
     in-out property <float> playback-position: 0.0;
     in property <[FileInfo]> file-list: [];
     in-out property <int> current-file-index: -1;
     in-out property <length> file-list-scroll-viewport-y: 0px;
+    out property <length> file-list-visible-height: file-list-view.visible-height;
     in-out property <string> total-files: "";
     in-out property <string> total-duration: "";
     in-out property <string> total-size: "";
@@ -53,7 +57,17 @@ export component MainWindow inherits Window {
     in-out property <string> hintbox-prev-start: "";
     in-out property <string> hintbox-prev-end: "";
     in-out property <string> section-titles: "";
-    
+
+    in property <bool> dialog-busy: false;
+    in property <string> dialog-error-message: "";
+    in property <string> dialog-markers-status-message: "";
+    in property <string> dialog-markers-alias-error: "";
+    in property <string> dialog-markers-shortcut-error: "";
+    in property <string> dialog-markers-begin-reduction-error: "";
+    in property <string> dialog-markers-begin-repeat-error: "";
+    in property <string> dialog-markers-end-reduction-error: "";
+    in property <string> dialog-markers-end-repeat-error: "";
+
     in-out property <bool> dialog-project-open: false;
     in-out property <string> dialog-project-title: "";
     in-out property <string> dialog-project-author: "";
@@ -92,6 +106,9 @@ export component MainWindow inherits Window {
     in-out property <string> dialog-compile-stages-text: "";
     in-out property <float> dialog-compile-eta-secs: -1.0;
     in-out property <bool> dialog-compile-cancel-enabled: true;
+    in property <bool> dialog-compile-finished: false;
+    in property <bool> dialog-compile-cancel-requested: false;
+    in property <bool> dialog-compile-publishing: false;
     in-out property <bool> is-compiling: false;
     in-out property <bool> dialog-toc-open: false;
     in-out property <string> dialog-toc-list-text: "";
@@ -102,12 +119,23 @@ export component MainWindow inherits Window {
     in-out property <bool> dialog-delete-open: false;
     in-out property <string> dialog-delete-text: "";
     in-out property <int> dialog-delete-file-index: -1;
+    in property <string> error-message: "";
+    out property <bool> modal-open: root.dialog-project-open || root.dialog-chunk-open
+        || root.dialog-markers-open || root.dialog-toc-open || root.dialog-shortcuts-open
+        || root.dialog-delete-open || root.is-compiling;
+
+    changed modal-open => {
+        // Не оставляем фокус в поле поиска или списке под модальным диалогом.
+        // Фон исключён из Tab-навигации; Tab переводит фокус в видимый диалог.
+        main-focus-scope.focus();
+    }
 
     callback key-pressed(string);
     callback search-hint-up(string);
     callback search-hint-down(string);
     callback add-marker-with-normalization(string);
     callback window-closed();
+    callback dialog-project-cancel();
     callback dialog-project-save(string, string, string, string, string, string, bool, string, bool, bool);
     callback file-clicked(int);
     callback file-double-clicked(int);
@@ -119,6 +147,7 @@ export component MainWindow inherits Window {
     callback dialog-project-request-open();
     callback compile();
     callback dialog-compile-cancel();
+    callback dialog-compile-close();
     callback dialog-markers-marker-selected(int);
     callback dialog-markers-add-marker(string);
     callback dialog-markers-save(string, string, string, string, string, string, string, string, string, string, string, string, bool);
@@ -130,41 +159,68 @@ export component MainWindow inherits Window {
     callback dialog-shortcuts-cancel();
     callback dialog-delete-confirm(int);
     callback dialog-delete-cancel();
+    callback dismiss-error();
 
     main-focus-scope := FocusScope {
         init => { self.focus(); }
+        focus-on-tab-navigation: !root.modal-open;
 
         key-pressed(event) => {
             // Обработка ESC для закрытия диалогов
             if (event.text == Key.Escape) {
+                if (root.dialog-busy) { return accept; }
+                if (root.is-compiling && root.dialog-compile-finished) {
+                    root.dialog-compile-close();
+                    main-focus-scope.focus();
+                    return accept;
+                }
                 if (root.dialog-delete-open) {
                     root.dialog-delete-cancel();
                     root.dialog-delete-open = false;
+                    main-focus-scope.focus();
                     return accept;
                 }
                 if (root.dialog-shortcuts-open) {
                     root.dialog-shortcuts-cancel();
                     root.dialog-shortcuts-open = false;
+                    main-focus-scope.focus();
                     return accept;
                 }
                 if (root.dialog-toc-open) {
                     root.dialog-toc-cancel();
+                    root.dialog-toc-open = false;
+                    main-focus-scope.focus();
                     return accept;
                 }
                 if (root.dialog-markers-open) {
                     root.dialog-markers-cancel();
+                    root.dialog-markers-open = false;
+                    main-focus-scope.focus();
                     return accept;
                 }
                 if (root.dialog-chunk-open) {
                     root.dialog-chunk-cancel();
+                    root.dialog-chunk-open = false;
+                    main-focus-scope.focus();
                     return accept;
                 }
                 if (root.dialog-project-open) {
+                    root.dialog-project-cancel();
                     root.dialog-project-open = false;
+                    main-focus-scope.focus();
                     return accept;
                 }
             }
-            
+
+            // Нативная Tab-навигация и редактирование внутри диалога остаются
+            // доступны, но ни один необработанный shortcut не меняет проект.
+            if (event.text == Key.Tab || event.text == Key.Backtab) {
+                return reject;
+            }
+            if (root.modal-open) {
+                return accept;
+            }
+
             // Обработка функциональных клавиш F4, F5, F8
             if (event.text == Key.F4) {
                 root.dialog-markers-request-open();
@@ -198,10 +254,10 @@ export component MainWindow inherits Window {
                 root.key-pressed("a");
                 return accept;
             }
-            
+
             let key_text = event.text;
             if (key_text == "0" || key_text == "1" || key_text == "2" || key_text == "3" ||
-                key_text == "4" || key_text == "5" || key_text == "6" || 
+                key_text == "4" || key_text == "5" || key_text == "6" ||
                 key_text == "7" || key_text == "8" || key_text == "9") {
                 root.add-marker-with-normalization(key_text);
                 return accept;
@@ -215,13 +271,14 @@ export component MainWindow inherits Window {
                 return accept;
             }
         }
-        
-        
+
+
         VerticalBox {
             HorizontalBox {
                 height: 42px;
                 MainMenu {
                     height: 42px;
+                    enabled: !root.modal-open;
                     project-clicked => {
                         root.dialog-project-request-open();
                     }
@@ -243,6 +300,12 @@ export component MainWindow inherits Window {
                 }
             }
 
+            if root.error-message != "": ErrorBanner {
+                message: root.error-message;
+                enabled: !root.modal-open;
+                dismiss => { root.dismiss-error(); }
+            }
+
             VerticalBox {
                 padding-left: 10px;
                 padding-right: 10px;
@@ -257,7 +320,7 @@ export component MainWindow inherits Window {
                     section-titles <=> root.section-titles;
                 }
             }
-            
+
             // Ряд: waveform и индикатор уровня
             HorizontalBox {
                 height: 12.5%;
@@ -265,12 +328,14 @@ export component MainWindow inherits Window {
                 padding-right: 10px;
                 WaveformWidget {
                     title: "Previous";
+                    loading: root.waveform-prev-loading;
                     waveform-data <=> waveform-prev;
                     playback-position: 0.0;
                     width: 25%;
                 }
                 WaveformWidget {
                     title: "Current";
+                    loading: root.waveform-current-loading;
                     waveform-data <=> waveform-current;
                     playback-position <=> root.playback-position;
                     window-samples <=> root.waveform-current-window;
@@ -281,7 +346,7 @@ export component MainWindow inherits Window {
                     width: 50px;
                 }
             }
-            
+
             // Подсказки — под графиками
             HintBar {
                 hint-start <=> root.hintbox-current-start;
@@ -292,7 +357,7 @@ export component MainWindow inherits Window {
                 hint-start <=> root.hintbox-prev-start;
                 hint-end <=> root.hintbox-prev-end;
             }
-            
+
             // Панель поиска по hint
             HorizontalBox {
                 height: 32px;
@@ -311,12 +376,14 @@ export component MainWindow inherits Window {
                         padding-left: 6px;
                         padding-right: 6px;
                         TextInput {
+                            enabled: !root.modal-open;
                             text <=> root.search-hint-query;
                             vertical-alignment: center;
                         }
                     }
                 }
                 search-up-btn := TouchArea {
+                    enabled: !root.modal-open;
                     width: 32px;
                     height: 28px;
                     Rectangle {
@@ -340,6 +407,7 @@ export component MainWindow inherits Window {
                     }
                 }
                 search-down-btn := TouchArea {
+                    enabled: !root.modal-open;
                     width: 32px;
                     height: 28px;
                     Rectangle {
@@ -363,22 +431,24 @@ export component MainWindow inherits Window {
                     }
                 }
             }
-            
+
             // Список файлов - занимает всё оставшееся место
             file-list-focus := FocusScope {
+                enabled: !root.modal-open;
                 // Перехват Delete только когда фокус в списке записей (не в поле поиска)
                 capture-key-pressed(event) => {
-                    if (event.text == Key.Delete) {
+                    if (!root.modal-open && event.text == Key.Delete) {
                         root.key-pressed("Delete");
                         return accept;
                     }
                     return reject;
                 }
                 key-pressed(event) => {
-                    root.key-pressed(event.text);
-                    return accept;
+                    // F-клавиши, стрелки и маркеры обрабатывает общий scope.
+                    return reject;
                 }
-                FileList {
+                file-list-view := FileList {
+                    enabled: !root.modal-open;
                     files <=> file-list;
                     current-index <=> current-file-index;
                     scroll-viewport-y <=> root.file-list-scroll-viewport-y;
@@ -400,18 +470,22 @@ export component MainWindow inherits Window {
                 }
             }
         }
-        
+
         // Модальный overlay для метаданных
         ModalOverlay {
             visible: root.dialog-project-open;
         }
-        
+
         // Модальный диалог метаданных
         MetaDialog {
             visible: root.dialog-project-open;
-            x: 200px;
-            y: 10px;
+            width: min(520px, parent.width - 20px);
+            height: min(500px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
+            busy: root.dialog-busy;
+            error-message: root.dialog-error-message;
             meta-title <=> root.dialog-project-title;
             meta-author <=> root.dialog-project-author;
             meta-year <=> root.dialog-project-year;
@@ -424,42 +498,45 @@ export component MainWindow inherits Window {
             meta-denoise <=> root.dialog-project-denoise;
             save => {
                 root.dialog-project-save(root.dialog-project-title, root.dialog-project-author, root.dialog-project-year, root.dialog-project-hint, root.dialog-project-reader, root.dialog-project-format-audio, root.dialog-project-normalize, root.dialog-project-cover, root.dialog-project-section-split, root.dialog-project-denoise);
-                root.dialog-project-open = false;
-                main-focus-scope.focus();
             }
             cancel => {
+                if (root.dialog-busy) { return; }
+                root.dialog-project-cancel();
                 root.dialog-project-open = false;
                 main-focus-scope.focus();
             }
         }
-        
+
         // Модальный overlay для настроек chunk
         ModalOverlay {
             visible: root.dialog-chunk-open;
         }
-        
+
         // Модальный диалог настроек chunk
         ChunkSettingsDialog {
             visible: root.dialog-chunk-open;
-            x: 100px;
-            y: 100px;
+            width: min(520px, parent.width - 20px);
+            height: min(400px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
+            busy: root.dialog-busy;
+            error-message: root.dialog-error-message;
             title <=> root.dialog-chunk-title;
             author <=> root.dialog-chunk-author;
             year <=> root.dialog-chunk-year;
             hint <=> root.dialog-chunk-hint;
             save => {
                 root.dialog-chunk-save(root.dialog-chunk-file-index, root.dialog-chunk-title, root.dialog-chunk-author, root.dialog-chunk-year, root.dialog-chunk-hint);
-                root.dialog-chunk-open = false;
-                main-focus-scope.focus();
             }
             cancel => {
+                if (root.dialog-busy) { return; }
                 root.dialog-chunk-cancel();
                 root.dialog-chunk-open = false;
                 main-focus-scope.focus();
             }
         }
-        
+
         // Модальный overlay для диалога TOC
         ModalOverlay {
             visible: root.dialog-toc-open;
@@ -468,8 +545,10 @@ export component MainWindow inherits Window {
         // Диалог списка секций
         TocDialog {
             visible: root.dialog-toc-open;
-            x: 100px;
-            y: 100px;
+            width: min(500px, parent.width - 20px);
+            height: min(440px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
             toc-list-text <=> root.dialog-toc-list-text;
             cancel => {
@@ -483,13 +562,24 @@ export component MainWindow inherits Window {
         ModalOverlay {
             visible: root.dialog-markers-open;
         }
-        
+
         // Модальный диалог настроек маркеров
         MarkerSettingsDialog {
             visible: root.dialog-markers-open;
-            x: 40px;
-            y: 40px;
+            width: min(900px, parent.width - 20px);
+            height: min(680px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
+            busy: root.dialog-busy;
+            error-message: root.dialog-error-message;
+            status-message: root.dialog-markers-status-message;
+            alias-error: root.dialog-markers-alias-error;
+            shortcut-error: root.dialog-markers-shortcut-error;
+            begin-reduction-error: root.dialog-markers-begin-reduction-error;
+            begin-repeat-error: root.dialog-markers-begin-repeat-error;
+            end-reduction-error: root.dialog-markers-end-reduction-error;
+            end-repeat-error: root.dialog-markers-end-repeat-error;
             marker-list <=> root.dialog-markers-list;
             selected-marker-index <=> root.dialog-markers-selected-index;
             marker-section <=> root.dialog-markers-section;
@@ -515,37 +605,45 @@ export component MainWindow inherits Window {
                 if (root.dialog-markers-selected-index >= 0 && root.dialog-markers-selected-index < root.dialog-markers-list.length) {
                     root.dialog-markers-save(root.dialog-markers-list[root.dialog-markers-selected-index], root.dialog-markers-title, root.dialog-markers-hint, root.dialog-markers-shortcut, root.dialog-markers-begin-audio, root.dialog-markers-begin-kind, root.dialog-markers-begin-reduction, root.dialog-markers-begin-repeat, root.dialog-markers-end-audio, root.dialog-markers-end-kind, root.dialog-markers-end-reduction, root.dialog-markers-end-repeat, root.dialog-markers-section);
                 }
-                root.dialog-markers-open = false;
-                main-focus-scope.focus();
             }
             update-meta => {
                 root.dialog-markers-update-meta();
             }
             cancel => {
+                if (root.dialog-busy) { return; }
                 root.dialog-markers-cancel();
                 root.dialog-markers-open = false;
                 main-focus-scope.focus();
             }
         }
-        
+
         // Модальный overlay для индикатора компиляции
         ModalOverlay {
             visible: root.is-compiling;
         }
-        
+
         // Диалог индикатора прогресса компиляции
         CompileProgressDialog {
             visible: root.is-compiling;
-            x: (parent.width - 400px) / 2;
-            y: (parent.height - 220px) / 2;
+            width: min(480px, parent.width - 20px);
+            height: min(320px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
             progress <=> root.compile-progress;
             stage <=> root.compile-stage;
             stages-text <=> root.dialog-compile-stages-text;
             eta-secs <=> root.dialog-compile-eta-secs;
             cancel-enabled <=> root.dialog-compile-cancel-enabled;
+            finished: root.dialog-compile-finished;
+            cancel-requested: root.dialog-compile-cancel-requested;
+            publishing: root.dialog-compile-publishing;
             cancel => {
                 root.dialog-compile-cancel();
+            }
+            close => {
+                root.dialog-compile-close();
+                main-focus-scope.focus();
             }
         }
 
@@ -556,8 +654,10 @@ export component MainWindow inherits Window {
 
         ShortcutsDialog {
             visible: root.dialog-shortcuts-open;
-            x: (parent.width - 480px) / 2;
-            y: (parent.height - 420px) / 2;
+            width: min(520px, parent.width - 20px);
+            height: min(480px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
             shortcuts-list-text <=> root.dialog-shortcuts-list-text;
             cancel => {
@@ -573,8 +673,10 @@ export component MainWindow inherits Window {
 
         DeleteChunkDialog {
             visible: root.dialog-delete-open;
-            x: (parent.width - 440px) / 2;
-            y: (parent.height - 180px) / 2;
+            width: min(440px, parent.width - 20px);
+            height: min(220px, parent.height - 20px);
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
             z: 100;
             message <=> root.dialog-delete-text;
             confirm => {

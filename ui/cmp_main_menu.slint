@@ -1,6 +1,7 @@
 import { HorizontalBox, Button } from "std-widgets.slint";
 
 export component MainMenu inherits Rectangle {
+    in property <bool> enabled: true;
     callback project-clicked();
     callback markers-clicked();
     callback toc-clicked();
@@ -24,24 +25,28 @@ export component MainMenu inherits Rectangle {
         spacing: 5px;
 
         Button {
+            enabled: root.enabled;
             text: "Project (F5)";
             clicked => {
                 root.project-clicked();
             }
         }
         Button {
+            enabled: root.enabled;
             text: "Markers (F4)";
             clicked => {
                 root.markers-clicked();
             }
         }
         Button {
+            enabled: root.enabled;
             text: "TOC (F10)";
             clicked => {
                 root.toc-clicked();
             }
         }
         Button {
+            enabled: root.enabled;
             text: "Compile (F8)";
             clicked => {
                 root.compile-clicked();
@@ -49,4 +54,3 @@ export component MainMenu inherits Rectangle {
         }
     }
 }
-

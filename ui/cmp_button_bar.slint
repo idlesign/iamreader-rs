@@ -1,19 +1,37 @@
 import { HorizontalBox, Button } from "std-widgets.slint";
 
 export component ButtonBar inherits HorizontalBox {
+    in property <bool> busy: false;
+    in property <bool> save-enabled: true;
     callback save-clicked();
+    callback cancel-clicked();
 
+    padding: 0px;
+    height: 32px;
+    min-width: 0px;
     alignment: end;
-    spacing: 10px;
+    spacing: 8px;
+    vertical-stretch: 0;
 
     Button {
-        text: "Save";
-        primary: true;
+        text: "Cancel";
+        enabled: !root.busy;
+        width: 80px;
         clicked => {
-            root.save-clicked();
+            if !root.busy {
+                root.cancel-clicked();
+            }
+        }
+    }
+    Button {
+        text: root.busy ? "Saving…" : "Save";
+        primary: true;
+        enabled: !root.busy && root.save-enabled;
+        width: 88px;
+        clicked => {
+            if !root.busy && root.save-enabled {
+                root.save-clicked();
+            }
         }
     }
 }
-
-
-

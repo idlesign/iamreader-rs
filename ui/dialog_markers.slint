@@ -1,17 +1,26 @@
-import { VerticalBox, HorizontalBox, Switch, ComboBox, Button, ScrollView } from "std-widgets.slint";
-import { DialogHeader, DialogSeparator, DialogSpacer } from "cmp_dialog_header.slint";
-import { TextInputField } from "cmp_text_input.slint";
+import { VerticalBox, HorizontalBox, Switch, ComboBox, Button, LineEdit, ScrollView } from "std-widgets.slint";
+import { DialogHeader, DialogSeparator, DialogErrorMessage } from "cmp_dialog_header.slint";
+import { TextInputField, TextInputFieldMultiline } from "cmp_text_input.slint";
 import { ButtonBar } from "cmp_button_bar.slint";
-import { SelectableList } from "cmp_selectable_list.slint";
-import { SectionHeader } from "cmp_section_header.slint";
+import { MarkerAssetEditor } from "cmp_marker_asset_editor.slint";
 
 export component MarkerSettingsDialog inherits Rectangle {
-    width: 900px;
-    height: 680px;
+    width: 700px;
+    height: 600px;
     background: #ffffff;
-    border-width: 2px;
-    border-color: #333;
-    
+    border-width: 1px;
+    border-color: #94a3b8;
+    border-radius: 6px;
+
+    in property <bool> busy: false;
+    in property <string> error-message: "";
+    in property <string> status-message: "";
+    in property <string> alias-error: "";
+    in property <string> shortcut-error: "";
+    in property <string> begin-reduction-error: "";
+    in property <string> begin-repeat-error: "";
+    in property <string> end-reduction-error: "";
+    in property <string> end-repeat-error: "";
     in-out property <[string]> marker-list: [];
     in-out property <int> selected-marker-index: -1;
     in-out property <string> marker-title: "";
@@ -27,13 +36,24 @@ export component MarkerSettingsDialog inherits Rectangle {
     in-out property <string> marker-end-repeat: "1";
     in-out property <bool> marker-section: false;
     in-out property <string> new-marker-alias: "";
-    
+    private property <bool> has-selection: root.selected-marker-index >= 0 && root.selected-marker-index < root.marker-list.length;
+    private property <bool> wide: root.width >= 720px;
+
     callback marker-selected(int);
     callback add-marker(string);
     callback save(string, string, string, string, string, string, string, string, string, string, string, string, bool);
     callback update-meta();
     callback cancel();
-    
+
+    changed visible => {
+        if root.visible {
+            body.viewport-y = 0px;
+        }
+    }
+    changed selected-marker-index => {
+        body.viewport-y = 0px;
+    }
+
     TouchArea {
         width: 100%;
         height: 100%;
@@ -41,206 +61,187 @@ export component MarkerSettingsDialog inherits Rectangle {
     }
     VerticalBox {
         height: 100%;
-        padding: 20px;
-        spacing: 0px;
-        
+        padding: 12px;
+        spacing: 8px;
+        min-width: 0px;
+
         DialogHeader {
             title: "Markers";
-            cancel => {
-                root.cancel();
-            }
+            enabled: !root.busy;
+            cancel => { root.cancel(); }
         }
-        
         DialogSeparator {}
-        
-        ScrollView {
-            preferred-height: 100%;
-            VerticalBox {
-                spacing: 0px;
-                DialogSpacer {}
-                
-                HorizontalBox {
-                    spacing: 10px;
-                    TextInputField {
-                        label: "New marker alias:";
-                        text <=> root.new-marker-alias;
-                        field-height: 30;
-                        min-width: 0;
-                    }
-                    Button {
-                        text: "Add";
-                        primary: true;
-                        clicked => {
-                            if (root.new-marker-alias != "") {
-                                root.add-marker(root.new-marker-alias);
-                                root.new-marker-alias = "";
-                            }
-                        }
+        HorizontalBox {
+            padding: 0px;
+            spacing: 8px;
+            height: 32px;
+            Text {
+                text: "Marker";
+                width: 60px;
+                font-size: 12px;
+                color: #334155;
+                vertical-alignment: center;
+            }
+            selector := ComboBox {
+                model: root.marker-list;
+                // Root reads the old draft before accepting the requested selection.
+                // Never bind this two-way or assign selected-marker-index here.
+                current-index: root.selected-marker-index;
+                current-value: root.has-selection ? root.marker-list[root.selected-marker-index] : "Select a marker";
+                enabled: !root.busy && root.marker-list.length > 0;
+                min-width: 0px;
+                selected(value) => {
+                    if !root.busy {
+                        root.marker-selected(self.current-index);
                     }
                 }
-                
-                DialogSpacer {}
-                
-                HorizontalBox {
-                    spacing: 20px;
-                    
-                    SelectableList {
-                        title: "Markers:";
-                        items <=> root.marker-list;
-                        selected-index <=> root.selected-marker-index;
-                        item-selected(index) => {
-                            root.marker-selected(index);
-                        }
-                    }
-                    
-                    VerticalBox {
-                        min-width: 0;
-                        spacing: 10px;
-                        
-                        HorizontalBox {
-                            spacing: 10px;
-                            TextInputField {
-                                label: "Title:";
-                                text <=> root.marker-title;
-                                field-height: 30;
-                            }
-                        }
-                        HorizontalBox {
-                            spacing: 10px;
-                            TextInputField {
-                                label: "Hint:";
-                                text <=> root.marker-hint;
-                                field-height: 30;
-                                width: 60%;
-                                min-width: 0;
-                            }
-                            TextInputField {
-                                label: "Shortcut (0-9):";
-                                text <=> root.marker-shortcut;
-                                field-height: 30;
-                                width: 5%;
-                                min-width: 0;
-                            }
-                        }
-                        
-                        HorizontalBox {
-                            spacing: 10px;
-                            Switch {
-                                text: "Section";
-                                checked <=> root.marker-section;
-                            }
-                        }
-                        
-                        HorizontalBox {
-                            spacing: 10px;
-                            Text {
-                                text: "Begin:";
-                                font-size: 12px;
-                                width: 60px;
-                                vertical-alignment: center;
-                            }
-                            TextInputField {
-                                label: "Audio:";
-                                text <=> root.marker-begin-audio;
-                                field-height: 30;
-                                width: 20%;
-                                min-width: 0;
-                            }
-                            TextInputField {
-                                label: "Reduction (%):";
-                                text <=> root.marker-begin-reduction;
-                                field-height: 30;
-                                width: 5%;
-                                min-width: 0;
-                            }
-                            TextInputField {
-                                label: "Repeat:";
-                                text <=> root.marker-begin-repeat;
-                                field-height: 30;
-                                width: 5%;
-                                min-width: 0;
-                            }
-                            Text {
-                                text: "Kind:";
-                                font-size: 12px;
-                                width: 50px;
-                                vertical-alignment: center;
-                            }
-                            ComboBox {
-                                model: ["add", "underlay"];
-                                current-value: root.marker-begin-kind;
-                                selected(val) => {
-                                    root.marker-begin-kind = val;
-                                }
-                                width: 25%;
-                                min-width: 0;
-                            }
-                        }
-                        
-                        HorizontalBox {
-                            spacing: 10px;
-                            Text {
-                                text: "End:";
-                                font-size: 12px;
-                                width: 60px;
-                                vertical-alignment: center;
-                            }
-                            TextInputField {
-                                label: "Audio:";
-                                text <=> root.marker-end-audio;
-                                field-height: 30;
-                                width: 20%;
-                                min-width: 0;
-                            }
-                            TextInputField {
-                                label: "Reduction (%):";
-                                text <=> root.marker-end-reduction;
-                                field-height: 30;
-                                width: 5%;
-                                min-width: 0;
-                            }
-                            TextInputField {
-                                label: "Repeat:";
-                                text <=> root.marker-end-repeat;
-                                field-height: 30;
-                                width: 5%;
-                                min-width: 0;
-                            }
-                            Text {
-                                text: "Kind:";
-                                font-size: 12px;
-                                width: 50px;
-                                vertical-alignment: center;
-                            }
-                            ComboBox {
-                                model: ["add", "underlay"];
-                                current-value: root.marker-end-kind;
-                                selected(val) => {
-                                    root.marker-end-kind = val;
-                                }
-                                width: 25%;
-                                min-width: 0;
-                            }
-                        }
-                    }
-                }
-                
-                DialogSpacer {}
             }
         }
-        
+        body := ScrollView {
+            min-height: 0px;
+            min-width: 0px;
+            viewport-width: self.visible-width;
+            horizontal-scrollbar-policy: always-off;
+            enabled: !root.busy;
+            VerticalBox {
+                width: body.visible-width;
+                padding: 0px;
+                padding-right: 12px;
+                spacing: 12px;
+                min-width: 0px;
+                alignment: start;
+
+                VerticalBox {
+                    padding: 0px;
+                    spacing: 4px;
+                    vertical-stretch: 0;
+                    Text {
+                        text: "New marker alias";
+                        font-size: 12px;
+                        color: #334155;
+                    }
+                    HorizontalBox {
+                        padding: 0px;
+                        spacing: 8px;
+                        height: 32px;
+                        LineEdit {
+                            text <=> root.new-marker-alias;
+                            enabled: !root.busy;
+                            min-width: 0px;
+                            font-size: 14px;
+                        }
+                        Button {
+                            text: "Add";
+                            enabled: !root.busy && root.new-marker-alias != "";
+                            width: 72px;
+                            clicked => {
+                                if !root.busy && root.new-marker-alias != "" {
+                                    root.add-marker(root.new-marker-alias);
+                                }
+                            }
+                        }
+                    }
+                    if root.alias-error != "": Text {
+                        text: root.alias-error;
+                        color: #b91c1c;
+                        font-size: 11px;
+                        wrap: word-wrap;
+                    }
+                }
+                DialogSeparator {}
+                TextInputField {
+                    label: "Title";
+                    text <=> root.marker-title;
+                    enabled: !root.busy && root.has-selection;
+                }
+                TextInputFieldMultiline {
+                    label: "Hint";
+                    text <=> root.marker-hint;
+                    field-height: 72;
+                    enabled: !root.busy && root.has-selection;
+                }
+                TextInputField {
+                    label: "Shortcut (0–9)";
+                    text <=> root.marker-shortcut;
+                    enabled: !root.busy && root.has-selection;
+                    error-message: root.shortcut-error;
+                    help-text: "Leave blank for no shortcut.";
+                }
+                Switch {
+                    text: "Starts a section";
+                    checked <=> root.marker-section;
+                    enabled: !root.busy && root.has-selection;
+                }
+                DialogSeparator {}
+                // One instance per editor: reflow geometry without duplicating draft state.
+                Rectangle {
+                    min-width: 0px;
+                    vertical-stretch: 0;
+                    height: root.wide ? max(begin-editor.preferred-height, end-editor.preferred-height)
+                        : begin-editor.preferred-height + 24px + end-editor.preferred-height;
+                    begin-editor := MarkerAssetEditor {
+                        x: 0px;
+                        y: 0px;
+                        width: root.wide ? (parent.width - 24px) / 2 : parent.width;
+                        height: self.preferred-height;
+                        title: "Begin sound";
+                        enabled: !root.busy && root.has-selection;
+                        audio <=> root.marker-begin-audio;
+                        kind <=> root.marker-begin-kind;
+                        reduction <=> root.marker-begin-reduction;
+                        repeat <=> root.marker-begin-repeat;
+                        reduction-error: root.begin-reduction-error;
+                        repeat-error: root.begin-repeat-error;
+                    }
+                    Rectangle {
+                        x: root.wide ? begin-editor.width + 12px : 0px;
+                        y: root.wide ? 0px : begin-editor.height + 12px;
+                        width: root.wide ? 1px : parent.width;
+                        height: root.wide ? parent.height : 1px;
+                        background: #dbe1e8;
+                    }
+                    end-editor := MarkerAssetEditor {
+                        x: root.wide ? begin-editor.width + 24px : 0px;
+                        y: root.wide ? 0px : begin-editor.height + 24px;
+                        width: begin-editor.width;
+                        height: self.preferred-height;
+                        title: "End sound";
+                        enabled: !root.busy && root.has-selection;
+                        audio <=> root.marker-end-audio;
+                        kind <=> root.marker-end-kind;
+                        reduction <=> root.marker-end-reduction;
+                        repeat <=> root.marker-end-repeat;
+                        reduction-error: root.end-reduction-error;
+                        repeat-error: root.end-repeat-error;
+                    }
+                }
+            }
+        }
+        if root.error-message != "": DialogErrorMessage { text: root.error-message; }
+        if root.status-message != "": Text {
+            text: root.status-message;
+            color: #166534;
+            font-size: 12px;
+            height: 18px;
+            overflow: elide;
+        }
+        DialogSeparator {}
         HorizontalBox {
-            alignment: end;
-            spacing: 10px;
+            padding: 0px;
+            height: 32px;
+            spacing: 8px;
             Button {
                 text: "Update meta";
-                clicked => {
-                    root.update-meta();
-                }
+                enabled: !root.busy;
+                width: 104px;
+                clicked => { if !root.busy { root.update-meta(); } }
             }
             ButtonBar {
+                busy: root.busy;
+                save-enabled: root.has-selection;
+                cancel-clicked => { root.cancel(); }
                 save-clicked => {
-                    if (root.selected-marker-index >= 0 && root.selected-marker-index < root.marker-list.length) {
+                    if root.has-selection {
                         root.save(root.marker-list[root.selected-marker-index], root.marker-title, root.marker-hint, root.marker-shortcut, root.marker-begin-audio, root.marker-begin-kind, root.marker-begin-reduction, root.marker-begin-repeat, root.marker-end-audio, root.marker-end-kind, root.marker-end-reduction, root.marker-end-repeat, root.marker-section);
                     }
                 }

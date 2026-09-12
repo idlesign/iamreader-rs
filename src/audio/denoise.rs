@@ -36,8 +36,19 @@ fn find_model_path() -> Result<std::path::PathBuf> {
 /// Создаёт сессию ONNX для деноайзера (один раз на всю компиляцию).
 pub fn create_denoise_session() -> Result<Session> {
     let model_path = find_model_path()?;
+    // Clip shapes vary. Keep model weights, not an arena/memory-pattern cache
+    // that retains large activation buffers for previously processed lengths.
+    // A small non-spinning pool favors the interactive recorder over throughput.
     Session::builder()
         .context("ort session builder")?
+        .with_intra_threads(crate::utils::inference::thread_budget(num_cpus::get()))?
+        .with_intra_op_spinning(false)?
+        .with_inter_op_spinning(false)?
+        .with_memory_pattern(false)?
+        .with_execution_providers([ort::ep::CPU::default()
+            .with_arena_allocator(false)
+            .build()
+            .error_on_failure()])?
         .commit_from_file(&model_path)
         .context("load ONNX model")
 }
@@ -95,26 +106,6 @@ pub fn apply_denoise_with_session(
     Ok(out)
 }
 
-/// Применяет шумоподавление (создаёт сессию на каждый вызов). Для компиляции предпочтительно create_denoise_session + apply_denoise_with_session.
-pub fn apply_denoise(
-    samples: &[f32],
-    sample_rate: u32,
-    channels: u16,
-) -> Result<Vec<f32>> {
-    let model_path = match find_model_path() {
-        Ok(p) => p,
-        Err(e) => {
-            log::warn!("Denoise skipped (model not found): {}", e);
-            return Ok(samples.to_vec());
-        }
-    };
-    let mut session = Session::builder()
-        .context("ort session builder")?
-        .commit_from_file(&model_path)
-        .context("load ONNX model")?;
-    apply_denoise_with_session(&mut session, samples, sample_rate, channels)
-}
-
 /// Транспонирует (n_frames, N_BINS) -> flat [1, N_BINS, n_frames] (batch, freq, time).
 fn transpose_fb_to_bf(frames_bins: &[f32], n_frames: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; N_BINS * n_frames];
@@ -152,8 +143,16 @@ fn run_model_one_chunk(session: &mut Session, wav: &[f32]) -> Result<Vec<f32>> {
     let cos_flat = transpose_fb_to_bf(&cos, n_frames);
     let sin_flat = transpose_fb_to_bf(&sin, n_frames);
 
-    let input_names: Vec<String> = session.inputs().iter().map(|i| i.name().to_string()).collect();
-    let output_names: Vec<String> = session.outputs().iter().map(|o| o.name().to_string()).collect();
+    let input_names: Vec<String> = session
+        .inputs()
+        .iter()
+        .map(|i| i.name().to_string())
+        .collect();
+    let output_names: Vec<String> = session
+        .outputs()
+        .iter()
+        .map(|o| o.name().to_string())
+        .collect();
     if input_names.len() < 3 || output_names.len() < 3 {
         anyhow::bail!(
             "Resemble denoiser expects 3 inputs and 3 outputs, got {} and {}",
@@ -162,9 +161,12 @@ fn run_model_one_chunk(session: &mut Session, wav: &[f32]) -> Result<Vec<f32>> {
         );
     }
 
-    let mag_t = Tensor::<f32>::from_array(([1_usize, N_BINS, n_frames], mag_flat)).context("mag tensor")?;
-    let cos_t = Tensor::<f32>::from_array(([1_usize, N_BINS, n_frames], cos_flat)).context("cos tensor")?;
-    let sin_t = Tensor::<f32>::from_array(([1_usize, N_BINS, n_frames], sin_flat)).context("sin tensor")?;
+    let mag_t =
+        Tensor::<f32>::from_array(([1_usize, N_BINS, n_frames], mag_flat)).context("mag tensor")?;
+    let cos_t =
+        Tensor::<f32>::from_array(([1_usize, N_BINS, n_frames], cos_flat)).context("cos tensor")?;
+    let sin_t =
+        Tensor::<f32>::from_array(([1_usize, N_BINS, n_frames], sin_flat)).context("sin tensor")?;
 
     let outputs = session.run(ort::inputs![
         input_names[0].as_str() => mag_t,
@@ -189,9 +191,7 @@ fn run_model_one_chunk(session: &mut Session, wav: &[f32]) -> Result<Vec<f32>> {
 
 fn hann_window(n: usize) -> Vec<f32> {
     (0..n)
-        .map(|i| {
-            0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n as f32 - 1.0)).cos())
-        })
+        .map(|i| 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n as f32 - 1.0)).cos()))
         .collect()
 }
 
@@ -221,6 +221,7 @@ fn stft(wav: &[f32]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
     let fft = planner.plan_fft_forward(N_FFT);
     let mut in_buf = vec![0.0f32; N_FFT];
     let mut spectrum = fft.make_output_vec();
+    let mut scratch = fft.make_scratch_vec();
     let hann = hann_window(N_FFT);
 
     let mut mag = vec![0.0f32; N_BINS * n_frames];
@@ -229,10 +230,15 @@ fn stft(wav: &[f32]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
 
     for fi in 0..n_frames {
         let start = fi * STFT_HOP_LENGTH;
-        for (i, (&s, &w)) in padded[start..start + N_FFT].iter().zip(hann.iter()).enumerate() {
+        for (i, (&s, &w)) in padded[start..start + N_FFT]
+            .iter()
+            .zip(hann.iter())
+            .enumerate()
+        {
             in_buf[i] = s * w;
         }
-        fft.process(&mut in_buf, &mut spectrum).unwrap();
+        fft.process_with_scratch(&mut in_buf, &mut spectrum, &mut scratch)
+            .unwrap();
         let mag_row = &mut mag[fi * N_BINS..(fi + 1) * N_BINS];
         let cos_row = &mut cos[fi * N_BINS..(fi + 1) * N_BINS];
         let sin_row = &mut sin[fi * N_BINS..(fi + 1) * N_BINS];
@@ -254,6 +260,8 @@ fn istft(sep_mag: &[f32], sep_cos: &[f32], sep_sin: &[f32], out_len: usize) -> R
     let mut planner = RealFftPlanner::new();
     let ifft = planner.plan_fft_inverse(N_FFT);
     let mut spectrum = vec![Complex::new(0.0f32, 0.0f32); N_FFT / 2 + 1];
+    let mut time_domain = ifft.make_output_vec();
+    let mut scratch = ifft.make_scratch_vec();
     let hann = hann_window(N_FFT);
 
     let total_len = PAD_CENTER + (out_len + PAD_TAIL) + PAD_CENTER;
@@ -272,8 +280,7 @@ fn istft(sep_mag: &[f32], sep_cos: &[f32], sep_sin: &[f32], out_len: usize) -> R
         if nyquist < spectrum.len() {
             spectrum[nyquist].im = 0.0;
         }
-        let mut time_domain = ifft.make_output_vec();
-        ifft.process(&mut spectrum, &mut time_domain)
+        ifft.process_with_scratch(&mut spectrum, &mut time_domain, &mut scratch)
             .map_err(|e| anyhow::anyhow!("iSTFT: {}", e))?;
         // realfft/rustfft: IFFT(FFT(x)) = N*x, so scale by 1/N_FFT for correct amplitude
         let start = fi * STFT_HOP_LENGTH;
@@ -301,3 +308,7 @@ fn istft(sep_mag: &[f32], sep_cos: &[f32], sep_sin: &[f32], out_len: usize) -> R
         .collect();
     Ok(result)
 }
+
+#[cfg(test)]
+#[path = "denoise_tests.rs"]
+mod tests;

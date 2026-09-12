@@ -1,16 +1,16 @@
+mod app;
 mod audio;
 mod project;
 mod ui;
 mod utils;
-mod app;
 
-use app::App;
-use std::path::PathBuf;
-use std::sync::{Arc, atomic::AtomicBool};
 use anyhow::Result;
-use log::info;
-use std::sync::atomic::Ordering;
+use app::App;
 use clap::Parser;
+use log::info;
+use std::path::PathBuf;
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicBool, Arc};
 
 #[derive(Parser)]
 #[command(about = "Application for recording audiobooks by narrators")]
@@ -70,44 +70,69 @@ fn main() -> Result<()> {
     }
 
     if !headless {
-        let mut app = App::new(project_path.clone(), debug, fifo_path.clone(), false, running.clone())?;
-        let mut ui = app.ui.take().ok_or_else(|| anyhow::anyhow!("UI not available"))?;
+        // Bootstrap only the window here. Devices and background workers belong to the
+        // single App created in the command-loop thread, never to the UI thread.
+        let project = project::Project::load(&project_path)?;
+        let (action_tx, action_rx) = crossbeam_channel::unbounded();
+        let (current_index_tx, current_index_rx) = crossbeam_channel::unbounded();
+        let mut ui = ui::ui::UI::new(
+            action_tx,
+            project.settings.keys.clone(),
+            Some(current_index_rx),
+        )?;
+        ui.load_meta_from_project(&project.meta, &project.settings)?;
+        drop(project);
         let ui_state = ui.get_state();
-        let channels = app.take_channels_for_loop();
 
-        // Поток app loop: получает копию пути проекта и каналы от UI-потока,
-        // создаёт второй экземпляр App (headless) и крутит run() — обрабатывает действия, fifo, таймеры.
+        // The command loop owns project mutations, audio devices and transcription.
         let project_path_clone = project_path.clone();
         let debug_clone = debug;
         let fifo_path_clone = fifo_path.clone();
         let running_clone = running.clone();
         let app_handle = std::thread::spawn(move || {
-            let mut app_loop = match App::new(project_path_clone, debug_clone, fifo_path_clone, true, running_clone) {
+            let mut app_loop = match App::new(
+                project_path_clone,
+                debug_clone,
+                fifo_path_clone,
+                true,
+                running_clone,
+            ) {
                 Ok(mut app) => {
-                    app.inject_channels(channels);
+                    app.action_rx = action_rx;
+                    app.current_index_tx = Some(current_index_tx);
                     if !app.project.files.is_empty() {
                         app.current_index = Some(app.project.files.len() - 1);
                     }
-                    app.update_prev_waveform();
                     app.update_current_waveform();
-                    app.set_ui_state(ui_state);
-                    let _ = app.update_ui_state();
+                    app.update_prev_waveform();
+                    app.set_ui_state(ui_state.clone());
+                    if let Err(error) = app.update_ui_state() {
+                        app.report_error(&error);
+                    }
                     app
-                },
+                }
                 Err(e) => {
                     eprintln!("Failed to create app loop: {:?}", e);
+                    if let Ok(mut state) = ui_state.lock() {
+                        state.error_message = format!(
+                            "Application could not start. Correct the error and restart: {e:#}"
+                        );
+                    }
                     return;
                 }
             };
-            let _ = app_loop.run();
+            if let Err(error) = app_loop.run() {
+                app_loop.report_error(&error);
+            }
         });
 
-        ui.run().map_err(|e| anyhow::anyhow!("UI error: {:?}", e))?;
+        let ui_result = ui.run().map_err(|e| anyhow::anyhow!("UI error: {:?}", e));
 
         info!("Window closed, stopping application");
         running.store(false, Ordering::SeqCst);
 
         let _ = app_handle.join();
+        ui_result?;
     } else {
         let mut app = App::new(project_path, debug, fifo_path, headless, running)?;
         app.run()?;

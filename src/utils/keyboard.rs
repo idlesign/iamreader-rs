@@ -1,8 +1,21 @@
 use crate::project::project::KeyBindings;
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum DialogEdit {
+    Meta(crate::project::project::MetaData),
+    Chunk {
+        data: crate::project::project::ChunkSettingsData,
+        expected_path: String,
+    },
+    Marker(crate::project::project::MarkerSettingsData),
+    RefreshMetadata,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Action {
-    Record { duration_secs: Option<u64> },
+    Record {
+        duration_secs: Option<u64>,
+    },
     Ok,
     Stop,
     Prev,
@@ -12,27 +25,44 @@ pub enum Action {
     Play,
     ModeUpdate,
     ModeInsert,
-    Goto { index: Option<i32>, play: bool },
+    Goto {
+        index: Option<i32>,
+        play: bool,
+    },
     SearchHintUp(String),
     SearchHintDown(String),
     Shutdown,
-    SaveMeta(crate::project::project::MetaData),
-    SaveChunkSettings(crate::project::project::ChunkSettingsData),
-    AddMarker { marker: String },
-    AddMarkers { file_index: i32, markers: Vec<String> },
-    RemoveMarkers { file_index: i32, markers: Vec<String> },
-    SetMarkers { file_index: i32, markers: Vec<String> },
+    SaveDialog {
+        request_id: u64,
+        // Large form payloads must not enlarge every transport/recording command.
+        edit: Box<DialogEdit>,
+    },
+    AddMarker {
+        marker: String,
+    },
+    AddMarkers {
+        file_index: i32,
+        markers: Vec<String>,
+    },
+    RemoveMarkers {
+        file_index: i32,
+        markers: Vec<String>,
+    },
+    SetMarkers {
+        file_index: i32,
+        markers: Vec<String>,
+    },
     OpenMarkerSettings,
-    LoadMarkerSettings { marker: String },
-    SaveMarkerSettings(crate::project::project::MarkerSettingsData),
-    UpdateFilesMeta,
-    AddMarkerDefinition { alias: String },
     Compile,
     CompileCancel,
-    Transcribe { file_index: i32 },
+    Transcribe {
+        file_index: i32,
+    },
     OpenShortcutsDialog,
     OpenDeleteChunkDialog,
-    ConfirmDeleteChunk { ui_index: i32 },
+    ConfirmDeleteChunk {
+        ui_index: i32,
+    },
     None,
 }
 
@@ -42,8 +72,8 @@ pub struct KeyboardHandler {
 
 impl KeyboardHandler {
     pub fn new(bindings: KeyBindings) -> Self {
-        Self { _bindings: bindings }
+        Self {
+            _bindings: bindings,
+        }
     }
-
 }
-

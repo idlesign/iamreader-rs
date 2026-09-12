@@ -1,24 +1,33 @@
-import { HorizontalBox, Button } from "std-widgets.slint";
+import { HorizontalBox, Button, ScrollView } from "std-widgets.slint";
 
 export component DialogHeader inherits HorizontalBox {
     in property <string> title: "";
+    in property <bool> enabled: true;
     callback cancel();
 
-    Rectangle {
-        preferred-width: 24px;
-        min-width: 24px;
-    }
+    padding: 0px;
+    spacing: 8px;
+    height: 32px;
+    min-width: 0px;
+    vertical-stretch: 0;
+
     Text {
         text: root.title;
         font-size: 16px;
         font-weight: 700;
-        horizontal-alignment: center;
+        color: #1e293b;
+        vertical-alignment: center;
+        overflow: elide;
+        min-width: 0px;
+        horizontal-stretch: 1;
     }
-    HorizontalLayout {
-        alignment: end;
-        Button {
-            text: "×";
-            clicked => {
+    Button {
+        text: "×";
+        enabled: root.enabled;
+        width: 32px;
+        height: 32px;
+        clicked => {
+            if root.enabled {
                 root.cancel();
             }
         }
@@ -27,12 +36,37 @@ export component DialogHeader inherits HorizontalBox {
 
 export component DialogSeparator inherits Rectangle {
     height: 1px;
-    background: #ccc;
+    background: #dbe1e8;
 }
 
 export component DialogSpacer inherits Rectangle {
     height: 8px;
 }
 
+// A bounded, scrollable message never pushes the dialog's actions below the window.
+export component DialogErrorMessage inherits Rectangle {
+    in property <string> text: "";
+    height: 40px;
+    background: #fff4f4;
+    border-color: #efbaba;
+    border-width: 1px;
+    border-radius: 4px;
 
-
+    ScrollView {
+        x: 6px;
+        y: 4px;
+        width: parent.width - 12px;
+        height: parent.height - 8px;
+        viewport-width: self.visible-width;
+        horizontal-scrollbar-policy: always-off;
+        Text {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            text: root.text;
+            wrap: word-wrap;
+            color: #b91c1c;
+            font-size: 12px;
+        }
+    }
+}

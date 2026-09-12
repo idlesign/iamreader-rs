@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
-use std::collections::HashMap;
-use anyhow::{Result, Context};
 use crate::utils::stats::get_file_size_and_duration_ms;
+use anyhow::{Context, Result};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MarkerSettingsData {
@@ -55,11 +55,11 @@ pub struct ProcessMarkerAssetContext<'a> {
     pub add_duration_samples: Option<&'a mut u64>,
 }
 #[cfg(unix)]
-use std::os::unix::io::AsRawFd;
-#[cfg(unix)]
-use std::io::{Write, Read};
-#[cfg(unix)]
 use libc;
+#[cfg(unix)]
+use std::io::Read;
+#[cfg(unix)]
+use std::os::unix::io::AsRawFd;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectFile {
@@ -147,6 +147,7 @@ impl Default for KeyBindings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Settings {
     pub log: String,
     pub keys: KeyBindings,
@@ -177,6 +178,7 @@ impl Default for Settings {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Meta {
     #[serde(default = "default_title")]
     pub title: String,
@@ -333,8 +335,11 @@ impl Default for ProjectStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Project {
     pub files: Vec<ProjectFile>,
+    /// Monotonic creation order, independent of the fragment's position in the book.
+    pub next_chunk_number: u64,
     pub settings: Settings,
     #[serde(default)]
     pub meta: Meta,
@@ -350,7 +355,8 @@ impl Project {
         let mut chapter_marker = Self::create_default_marker("Chapter", "chapter.mp3", Some("1"));
         chapter_marker.section = true;
         markers.insert("chapter".to_string(), chapter_marker);
-        let mut footnote_marker = Self::create_default_marker("Footnote", "footnote.mp3", Some("2"));
+        let mut footnote_marker =
+            Self::create_default_marker("Footnote", "footnote.mp3", Some("2"));
         footnote_marker.assets.begin.reduction = Some(50);
         markers.insert("footnote".to_string(), footnote_marker);
         let mut footnote_end_marker = Self::create_default_marker("Footnote end", "", Some("3"));
@@ -359,7 +365,7 @@ impl Project {
         markers.insert("footnote_end".to_string(), footnote_end_marker);
         markers
     }
-    
+
     fn create_default_marker(title: &str, audio: &str, shortcut: Option<&str>) -> MarkerSettings {
         MarkerSettings {
             title: title.to_string(),
@@ -384,9 +390,14 @@ impl Project {
             section: false,
         }
     }
-    
+
     pub fn load(path: &Path) -> Result<Self> {
-        Self::load_with_lock(path)
+        let project = Self::load_with_lock(path)?;
+        anyhow::ensure!(
+            project.next_chunk_number > 0,
+            "next_chunk_number must be positive"
+        );
+        Ok(project)
     }
 
     fn load_with_lock(path: &Path) -> Result<Self> {
@@ -395,58 +406,62 @@ impl Project {
             let markers = Self::create_default_markers();
             return Ok(Project {
                 files: Vec::new(),
+                next_chunk_number: 1,
                 settings: Settings::default(),
                 meta: Meta::default(),
                 stats: ProjectStats::default(),
                 markers,
             });
         }
-        
+
         #[cfg(unix)]
         {
             use std::fs::OpenOptions;
-            
+
             // Открываем файл для чтения с блокировкой
             let mut file = OpenOptions::new()
                 .read(true)
                 .open(path)
                 .with_context(|| format!("Failed to open project file for reading: {:?}", path))?;
-            
+
             // Блокируем файл для разделяемого доступа (чтение)
             let fd = file.as_raw_fd();
             unsafe {
                 let result = libc::flock(fd, libc::LOCK_SH);
                 if result != 0 {
-                    return Err(anyhow::anyhow!("Failed to lock project file for reading: {:?}", path));
+                    return Err(anyhow::anyhow!(
+                        "Failed to lock project file for reading: {:?}",
+                        path
+                    ));
                 }
             }
-            
+
             // Читаем данные
             let mut content = String::new();
             file.read_to_string(&mut content)
                 .with_context(|| format!("Failed to read project file: {:?}", path))?;
-            
+
             // Разблокируем файл перед закрытием
             unsafe {
                 libc::flock(fd, libc::LOCK_UN);
             }
-            
-            let mut project: Project = serde_json::from_str(&content)
-                .with_context(|| "Failed to parse project file")?;
+
+            let mut project: Project =
+                serde_json::from_str(&content).context("Failed to parse project file")?;
             // Добавляем маркеры по умолчанию, если их нет
             if project.markers.is_empty() {
                 project.markers = Self::create_default_markers();
             }
             Ok(project)
         }
-        
+
         #[cfg(not(unix))]
         {
             use std::fs;
             let content = fs::read_to_string(path)
                 .with_context(|| format!("Failed to read project file: {:?}", path))?;
-            let mut project: Project = serde_json::from_str(&content)
-                .with_context(|| "Failed to parse project file")?;
+            let mut project: Project =
+                serde_json::from_str(&content).context("Failed to parse project file")?;
             // Добавляем маркеры по умолчанию, если их нет
             if project.markers.is_empty() {
                 project.markers = Self::create_default_markers();
@@ -455,75 +470,86 @@ impl Project {
         }
     }
 
+    /// Replace the project atomically: readers see either the old or the complete new JSON.
+    /// There is no backup/history of successful saves.
     pub fn save(&self, path: &Path) -> Result<()> {
-        Self::save_with_lock(self, path)
-    }
-
-    fn save_with_lock(&self, path: &Path) -> Result<()> {
-        let content = serde_json::to_string_pretty(self)
-            .with_context(|| "Failed to serialize project")?;
-        
+        // Follow an existing symlink instead of replacing the symlink itself.
+        let target = if path.exists() {
+            std::fs::canonicalize(path)
+                .with_context(|| format!("Failed to resolve project path: {:?}", path))?
+        } else {
+            path.to_path_buf()
+        };
+        let directory = target
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let mut temporary = tempfile::Builder::new()
+            .prefix(".iamreader-save-")
+            .tempfile_in(directory)
+            .with_context(|| {
+                format!("Failed to create temporary project file in {:?}", directory)
+            })?;
+        serde_json::to_writer_pretty(temporary.as_file_mut(), self)
+            .context("Failed to serialize project")?;
+        if let Ok(metadata) = std::fs::metadata(&target) {
+            temporary
+                .as_file()
+                .set_permissions(metadata.permissions())
+                .context("Failed to preserve project permissions")?;
+        }
+        temporary
+            .as_file()
+            .sync_all()
+            .context("Failed to sync temporary project file")?;
+        temporary
+            .persist(&target)
+            .map_err(|error| error.error)
+            .with_context(|| format!("Failed to replace project file: {:?}", target))?;
         #[cfg(unix)]
-        {
-            use std::fs::OpenOptions;
-            
-            // Открываем файл для записи с блокировкой
-            let mut file = OpenOptions::new()
-                .create(true)
-                .write(true)
-                .truncate(true)
-                .open(path)
-                .with_context(|| format!("Failed to open project file for writing: {:?}", path))?;
-            
-            // Блокируем файл для эксклюзивного доступа
-            let fd = file.as_raw_fd();
-            unsafe {
-                let result = libc::flock(fd, libc::LOCK_EX);
-                if result != 0 {
-                    return Err(anyhow::anyhow!("Failed to lock project file: {:?}", path));
-                }
-            }
-            
-            // Записываем данные
-            file.write_all(content.as_bytes())
-                .with_context(|| format!("Failed to write project file: {:?}", path))?;
-            file.sync_all()
-                .with_context(|| format!("Failed to sync project file: {:?}", path))?;
-            
-            // Разблокируем файл перед закрытием
-            unsafe {
-                libc::flock(fd, libc::LOCK_UN);
-            }
-        }
-        
-        #[cfg(not(unix))]
-        {
-            use std::fs;
-            fs::write(path, content)
-                .with_context(|| format!("Failed to write project file: {:?}", path))?;
-        }
-        
+        std::fs::File::open(directory)?
+            .sync_all()
+            .context("Failed to sync project directory")?;
         Ok(())
     }
 
-    pub fn get_next_file_path(&self, chunks_dir: &Path) -> PathBuf {
-        let num = self.files.len() + 1;
-        let filename = format!("{:05}.wav", num);
-        chunks_dir.join(filename)
+    /// Apply a worker result to the same audio file only if its hint was not edited.
+    /// Background workers never save the project themselves.
+    pub fn apply_transcription(
+        &mut self,
+        file_path: &Path,
+        previous_hint: &str,
+        text: &str,
+    ) -> bool {
+        let Some(file) = self
+            .files
+            .iter_mut()
+            .find(|file| Path::new(&file.path) == file_path)
+        else {
+            return false;
+        };
+        if file.hint != previous_hint || file.hint == text {
+            return false;
+        }
+        file.hint = text.to_owned();
+        true
     }
 
-    /// Путь для файла в режиме U (замена записи с индексом index, 0-based). hhmm = "%H%M".
-    pub fn get_file_path_for_update(chunks_dir: &Path, index: usize, hhmm: &str) -> PathBuf {
-        let num = index + 1;
-        let filename = format!("{:05}_u{}.wav", num, hhmm);
-        chunks_dir.join(filename)
-    }
-
-    /// Путь для файла в режиме I (вставка после записи с индексом after_index, 0-based). hhmm = "%H%M".
-    pub fn get_file_path_for_insert(chunks_dir: &Path, after_index: usize, hhmm: &str) -> PathBuf {
-        let num = after_index + 1;
-        let filename = format!("{:05}_i{}.wav", num, hhmm);
-        chunks_dir.join(filename)
+    /// Reserve a readable number that is never reused by this project after a save.
+    /// The saved counter is authoritative; occupied candidate paths are skipped.
+    pub fn get_next_file_path(&mut self, chunks_dir: &Path) -> Result<PathBuf> {
+        anyhow::ensure!(
+            self.next_chunk_number > 0,
+            "next_chunk_number must be positive"
+        );
+        loop {
+            let number = self.next_chunk_number;
+            self.next_chunk_number = number.checked_add(1).context("Chunk number exhausted")?;
+            let path = chunks_dir.join(format!("{:05}.wav", number));
+            if !path.try_exists()? {
+                return Ok(path);
+            }
+        }
     }
 
     pub fn _get_current_index(&self) -> Option<usize> {
@@ -567,7 +593,7 @@ impl Project {
     /// Обновляет size и duration_ms у записей по данным с диска (для кнопки Update meta).
     pub fn update_files_meta_from_disk(&mut self, project_dir: &Path) -> Result<()> {
         for file in &mut self.files {
-            let full_path = project_dir.join(&file.path);
+            let full_path = crate::utils::paths::resolve_project_file(project_dir, &file.path);
             if full_path.exists() {
                 if let Ok((size, duration_ms)) = get_file_size_and_duration_ms(&full_path) {
                     file.size = size;
@@ -579,3 +605,14 @@ impl Project {
     }
 }
 
+#[cfg(test)]
+#[path = "project_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "smoke_tests.rs"]
+mod smoke_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "resource_profile.rs"]
+mod resource_profile;

@@ -12,28 +12,53 @@ export struct FileInfo {
     is-recording: bool,
     is-playing: bool,
     title: string,
+    author: string,
+    year: string,
     hint: string,
 }
 
+// На узком окне сначала сохраняем читаемость времени, имени и размера.
+// На широком — прежние пропорции; title получает оставшуюся ширину.
+component FileColumns inherits Rectangle {
+    out property <length> markers-width: max(60px, self.width * 10 / 88);
+    out property <length> duration-width: max(64px, self.width * 10 / 88);
+    out property <length> start-time-width: max(64px, self.width * 10 / 88);
+    out property <length> name-width: max(96px, self.width * 14 / 88);
+    out property <length> size-width: max(72px, self.width * 6 / 88);
+    out property <length> title-width: max(0px, self.width - self.markers-width
+        - self.duration-width - self.start-time-width - self.name-width - self.size-width);
+    out property <length> duration-x: self.title-width + self.markers-width;
+    out property <length> start-time-x: self.duration-x + self.duration-width;
+    out property <length> name-x: self.start-time-x + self.start-time-width;
+    out property <length> size-x: self.name-x + self.name-width;
+
+    horizontal-stretch: 1;
+    min-width: 0px;
+    clip: true;
+    @children
+}
+
 export component FileList inherits Rectangle {
+    in property <bool> enabled: true;
     in property <[FileInfo]> files: [];
     in-out property <int> current-index: -1;
     in-out property <length> scroll-viewport-y: 0px;
+    out property <length> visible-height: listview.visible-height;
     in property <string> total-files: "";
     in property <string> total-duration: "";
     in property <string> total-size: "";
     in property <bool> is-recording: false;
-    
+
     callback file-clicked(int);
     callback file-double-clicked(int);
     callback dialog-chunk-request-open(int);
 
     private property <bool> recording-blink: false;
-    
+
     background: #f5f5f5;
     border-width: 1px;
     border-color: #ccc;
-    
+
     Timer {
         interval: 500ms;
         running: root.is-recording;
@@ -41,9 +66,10 @@ export component FileList inherits Rectangle {
             root.recording-blink = !root.recording-blink;
         }
     }
-    
+
     VerticalBox {
         listview := ListView {
+            enabled: root.enabled;
             preferred-height: 100%;
             viewport-y <=> root.scroll-viewport-y;
             for file[index] in files: Rectangle {
@@ -54,6 +80,7 @@ export component FileList inherits Rectangle {
                 border-color: #ccc;
 
                 TouchArea {
+                    enabled: root.enabled;
                     width: 100%;
                     height: 100%;
                     clicked => {
@@ -83,19 +110,15 @@ export component FileList inherits Rectangle {
                             horizontal-alignment: left;
                         }
                     }
-                    // Гибкая область: title, markers, duration, start-time, name, size (доли 38:10:10:10:14:6)
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        min-width: 0;
-                        clip: true;
+                    columns := FileColumns {
                         Rectangle {
                             x: 0;
-                            width: parent.width * 38 / 88;
+                            width: columns.title-width;
                             height: parent.height;
                             clip: true;
                             Text {
                                 text: file.title;
-                                width: parent.width;
+                                width: max(0px, parent.width - 4px);
                                 color: #333;
                                 font-size: 12px;
                                 vertical-alignment: center;
@@ -104,13 +127,14 @@ export component FileList inherits Rectangle {
                             }
                         }
                         Rectangle {
-                            x: parent.width * 38 / 88;
-                            width: parent.width * 10 / 88;
+                            x: columns.title-width;
+                            width: columns.markers-width;
                             height: parent.height;
                             clip: true;
                             Text {
                                 text: file.markers;
-                                width: parent.width;
+                                x: 4px;
+                                width: parent.width - 8px;
                                 color: #666;
                                 font-size: 11px;
                                 vertical-alignment: center;
@@ -119,41 +143,48 @@ export component FileList inherits Rectangle {
                             }
                         }
                         Rectangle {
-                            x: parent.width * 48 / 88;
-                            width: parent.width * 10 / 88;
+                            x: columns.duration-x;
+                            width: columns.duration-width;
                             height: parent.height;
                             clip: true;
                             Text {
+                                x: 4px;
+                                width: parent.width - 8px;
                                 text: file.duration;
                                 color: #333;
                                 font-family: "Ubuntu Mono";
                                 font-size: 12px;
                                 vertical-alignment: center;
                                 horizontal-alignment: right;
-                                overflow: elide;
+                                // Числа не сокращаем: для них зарезервирована минимальная ширина.
+                                overflow: clip;
                             }
                         }
                         Rectangle {
-                            x: parent.width * 58 / 88;
-                            width: parent.width * 10 / 88;
+                            x: columns.start-time-x;
+                            width: columns.start-time-width;
                             height: parent.height;
                             clip: true;
                             Text {
+                                x: 4px;
+                                width: parent.width - 8px;
                                 text: file.start-time;
                                 color: #333;
                                 font-family: "Ubuntu Mono";
                                 font-size: 12px;
                                 vertical-alignment: center;
                                 horizontal-alignment: right;
-                                overflow: elide;
+                                overflow: clip;
                             }
                         }
                         Rectangle {
-                            x: parent.width * 68 / 88;
-                            width: parent.width * 14 / 88;
+                            x: columns.name-x;
+                            width: columns.name-width;
                             height: parent.height;
                             clip: true;
                             Text {
+                                x: 4px;
+                                width: parent.width - 8px;
                                 text: file.name;
                                 color: #333;
                                 font-size: 12px;
@@ -163,18 +194,20 @@ export component FileList inherits Rectangle {
                             }
                         }
                         Rectangle {
-                            x: parent.width * 82 / 88;
-                            width: parent.width * 6 / 88;
+                            x: columns.size-x;
+                            width: columns.size-width;
                             height: parent.height;
                             clip: true;
                             Text {
+                                x: 4px;
+                                width: parent.width - 8px;
                                 text: file.size;
                                 color: #333;
                                 font-family: "Ubuntu Mono";
                                 font-size: 12px;
                                 vertical-alignment: center;
                                 horizontal-alignment: right;
-                                overflow: elide;
+                                overflow: clip;
                             }
                         }
                     }
@@ -192,7 +225,7 @@ export component FileList inherits Rectangle {
             background: #e8e8e8;
             border-width: 1px;
             border-color: #aaa;
-            
+
             HorizontalBox {
                 padding-left: 10px;
                 padding-right: 10px;
@@ -201,7 +234,7 @@ export component FileList inherits Rectangle {
                     preferred-width: 50px;
                     min-width: 50px;
                     clip: true;
-                        Text {
+                    Text {
                         text: total-files;
                         color: #333;
                         font-family: "Ubuntu Mono";
@@ -211,18 +244,15 @@ export component FileList inherits Rectangle {
                         horizontal-alignment: left;
                     }
                 }
-                Rectangle {
-                    horizontal-stretch: 1;
-                    min-width: 0;
-                    clip: true;
-                    Rectangle { x: 0; width: parent.width * 38 / 88; height: parent.height; }
-                    Rectangle { x: parent.width * 38 / 88; width: parent.width * 10 / 88; height: parent.height; }
+                summary-columns := FileColumns {
                     Rectangle {
-                        x: parent.width * 48 / 88;
-                        width: parent.width * 10 / 88;
+                        x: summary-columns.duration-x;
+                        width: summary-columns.duration-width;
                         height: parent.height;
                         clip: true;
                         Text {
+                            x: 4px;
+                            width: parent.width - 8px;
                             text: total-duration;
                             color: #333;
                             font-family: "Ubuntu Mono";
@@ -230,16 +260,17 @@ export component FileList inherits Rectangle {
                             font-weight: 700;
                             vertical-alignment: center;
                             horizontal-alignment: right;
-                            overflow: elide;
+                            overflow: clip;
                         }
                     }
-                    Rectangle { x: parent.width * 58 / 88; width: parent.width * 10 / 88; height: parent.height; }
                     Rectangle {
-                        x: parent.width * 68 / 88;
-                        width: parent.width * 20 / 88;
+                        x: summary-columns.name-x;
+                        width: summary-columns.name-width + summary-columns.size-width;
                         height: parent.height;
                         clip: true;
                         Text {
+                            x: 4px;
+                            width: parent.width - 8px;
                             text: total-size;
                             color: #333;
                             font-family: "Ubuntu Mono";
@@ -247,7 +278,7 @@ export component FileList inherits Rectangle {
                             font-weight: 700;
                             vertical-alignment: center;
                             horizontal-alignment: right;
-                            overflow: elide;
+                            overflow: clip;
                         }
                     }
                 }
@@ -260,4 +291,3 @@ export component FileList inherits Rectangle {
         }
     }
 }
-

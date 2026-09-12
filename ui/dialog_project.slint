@@ -1,16 +1,18 @@
-import { VerticalBox, HorizontalBox, ComboBox, Switch, ScrollView } from "std-widgets.slint";
-import { DialogHeader, DialogSeparator, DialogSpacer } from "cmp_dialog_header.slint";
+import { VerticalBox, HorizontalBox, ComboBox, Switch, ScrollView, Button } from "std-widgets.slint";
+import { DialogHeader, DialogSeparator, DialogErrorMessage } from "cmp_dialog_header.slint";
 import { TextInputField, TextInputFieldMultiline } from "cmp_text_input.slint";
 import { ButtonBar } from "cmp_button_bar.slint";
-import { SectionHeader } from "cmp_section_header.slint";
 
 export component MetaDialog inherits Rectangle {
     width: 500px;
-    height: 760px;
+    height: 560px;
     background: #ffffff;
-    border-width: 2px;
-    border-color: #333;
-    
+    border-width: 1px;
+    border-color: #94a3b8;
+    border-radius: 6px;
+
+    in property <bool> busy: false;
+    in property <string> error-message: "";
     in-out property <string> meta-title: "";
     in-out property <string> meta-author: "";
     in-out property <string> meta-year: "";
@@ -21,10 +23,14 @@ export component MetaDialog inherits Rectangle {
     in-out property <string> meta-cover: "cover.png";
     in-out property <bool> meta-section-split: false;
     in-out property <bool> meta-denoise: false;
-    
+    private property <int> active-tab: 0;
+
     callback save();
     callback cancel();
-    
+
+    changed active-tab => { body.viewport-y = 0px; }
+    changed visible => { if root.visible { root.active-tab = 0; body.viewport-y = 0px; } }
+
     TouchArea {
         width: 100%;
         height: 100%;
@@ -32,142 +38,152 @@ export component MetaDialog inherits Rectangle {
     }
     VerticalBox {
         height: 100%;
-        padding: 20px;
-        spacing: 0px;
-        
+        padding: 12px;
+        spacing: 8px;
+        min-width: 0px;
+
         DialogHeader {
             title: "Project Settings";
-            cancel => {
-                root.cancel();
+            enabled: !root.busy;
+            cancel => { root.cancel(); }
+        }
+        DialogSeparator {}
+        HorizontalBox {
+            padding: 0px;
+            spacing: 8px;
+            height: 32px;
+            alignment: start;
+            Button {
+                text: "Book";
+                primary: root.active-tab == 0;
+                enabled: !root.busy;
+                width: 100px;
+                clicked => { if !root.busy { root.active-tab = 0; } }
+            }
+            Button {
+                text: "Export";
+                primary: root.active-tab == 1;
+                enabled: !root.busy;
+                width: 100px;
+                clicked => { if !root.busy { root.active-tab = 1; } }
             }
         }
-        
-        DialogSeparator {}
-        
-        ScrollView {
-            preferred-height: 100%;
+        body := ScrollView {
+            min-height: 0px;
+            min-width: 0px;
+            viewport-width: self.visible-width;
+            horizontal-scrollbar-policy: always-off;
+            enabled: !root.busy;
             VerticalBox {
-                spacing: 0px;
+                width: body.visible-width;
+                padding: 0px;
+                padding-right: 12px;
+                spacing: 10px;
+                min-width: 0px;
+                alignment: start;
 
-                DialogSpacer {}
-
-                SectionHeader {
-                    text: "Original book data";
-                }
-
-                DialogSpacer {}
-                
-                TextInputField {
-                    label: "Title:";
-                    text <=> root.meta-title;
-                    field-height: 30;
-                }
-                
-                DialogSpacer {}
-                
-                TextInputField {
-                    label: "Author:";
-                    text <=> root.meta-author;
-                    field-height: 30;
-                }
-                
-                DialogSpacer {}
-                
-                TextInputField {
-                    label: "Published year:";
-                    text <=> root.meta-year;
-                    field-height: 30;
-                }
-
-                DialogSpacer {}
-
-                SectionHeader {
-                    text: "Reading info";
-                }
-
-                DialogSpacer {}
-                
-                TextInputFieldMultiline {
-                    label: "Hint:";
-                    text <=> root.meta-hint;
-                    field-height: 60;
-                }
-                
-                DialogSpacer {}
-                
-                TextInputField {
-                    label: "Reader:";
-                    text <=> root.meta-reader;
-                    field-height: 30;
-                }
-                
-                DialogSpacer {}
-                
-                SectionHeader {
-                    text: "Compile Settings";
-                }
-
-                DialogSpacer {}
-
-                TextInputField {
-                    label: "Cover:";
-                    text <=> root.meta-cover;
-                    field-height: 30;
-                }
-
-                DialogSpacer {}
-                
-                HorizontalBox {
+                if root.active-tab == 0: VerticalBox {
+                    padding: 0px;
                     spacing: 10px;
+                    min-width: 0px;
+                    vertical-stretch: 0;
+                    alignment: start;
+                    TextInputField {
+                        label: "Book title";
+                        text <=> root.meta-title;
+                        enabled: !root.busy;
+                    }
+                    HorizontalBox {
+                        padding: 0px;
+                        spacing: 12px;
+                        TextInputField {
+                            label: "Author";
+                            text <=> root.meta-author;
+                            enabled: !root.busy;
+                        }
+                        TextInputField {
+                            label: "Year";
+                            text <=> root.meta-year;
+                            enabled: !root.busy;
+                            width: 104px;
+                        }
+                    }
+                    TextInputField {
+                        label: "Reader";
+                        text <=> root.meta-reader;
+                        enabled: !root.busy;
+                    }
+                    TextInputFieldMultiline {
+                        label: "Hint";
+                        text <=> root.meta-hint;
+                        enabled: !root.busy;
+                        field-height: 96;
+                    }
+                }
+                if root.active-tab == 1: VerticalBox {
+                    padding: 0px;
+                    spacing: 10px;
+                    min-width: 0px;
+                    vertical-stretch: 0;
+                    alignment: start;
+                    HorizontalBox {
+                        padding: 0px;
+                        spacing: 12px;
+                        height: 32px;
+                        Text {
+                            text: "Format";
+                            width: 80px;
+                            font-size: 12px;
+                            color: #334155;
+                            vertical-alignment: center;
+                        }
+                        ComboBox {
+                            model: ["WAV (RF64)", "MP3"];
+                            current-value: root.meta-format-audio == "mp3" ? "MP3" : "WAV (RF64)";
+                            enabled: !root.busy;
+                            min-width: 0px;
+                            selected(value) => {
+                                if !root.busy {
+                                    root.meta-format-audio = value == "MP3" ? "mp3" : "wav";
+                                }
+                            }
+                        }
+                    }
                     Text {
-                        text: "Format:";
-                        font-size: 12px;
-                        width: 100px;
-                        vertical-alignment: center;
+                        text: "WAV uses RF64 for long books. MP3 uses compression.";
+                        font-size: 11px;
+                        color: #64748b;
+                        wrap: word-wrap;
                     }
-                    ComboBox {
-                        model: ["wav", "mp3"];
-                        current-value <=> root.meta-format-audio;
-                        width: 150px;
+                    TextInputField {
+                        label: "Cover image";
+                        text <=> root.meta-cover;
+                        enabled: !root.busy;
                     }
-                }
-
-                DialogSpacer {}
-                
-                HorizontalBox {
-                    spacing: 10px;
                     Switch {
-                        text: "Normalize";
+                        text: "Normalize audio";
                         checked <=> root.meta-normalize;
+                        enabled: !root.busy;
                     }
-                }
-                
-                DialogSpacer {}
-                
-                HorizontalBox {
-                    spacing: 10px;
                     Switch {
-                        text: "Section Split";
+                        text: "Separate files by section";
                         checked <=> root.meta-section-split;
+                        enabled: !root.busy;
                     }
-                }
-                
-                DialogSpacer {}
-                
-                HorizontalBox {
-                    spacing: 10px;
                     Switch {
                         text: "Denoise";
                         checked <=> root.meta-denoise;
+                        enabled: !root.busy;
                     }
                 }
             }
         }
-        
+        if root.error-message != "": DialogErrorMessage { text: root.error-message; }
+        DialogSeparator {}
         ButtonBar {
-            save-clicked => {
-                root.save();
-            }
+            busy: root.busy;
+            save-clicked => { root.save(); }
+            cancel-clicked => { root.cancel(); }
         }
     }
 }

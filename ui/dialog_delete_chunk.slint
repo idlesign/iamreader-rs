@@ -1,12 +1,13 @@
-import { VerticalBox, HorizontalBox, Button } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, Button, ScrollView } from "std-widgets.slint";
 import { DialogHeader, DialogSeparator } from "cmp_dialog_header.slint";
 
 export component DeleteChunkDialog inherits Rectangle {
     width: 440px;
     height: 180px;
     background: #ffffff;
-    border-width: 2px;
-    border-color: #333;
+    border-width: 1px;
+    border-color: #94a3b8;
+    border-radius: 6px;
 
     in property <string> message: "";
 
@@ -20,8 +21,8 @@ export component DeleteChunkDialog inherits Rectangle {
     }
     VerticalBox {
         height: 100%;
-        padding: 20px;
-        spacing: 0px;
+        padding: 12px;
+        spacing: 8px;
 
         DialogHeader {
             title: "Delete recording?";
@@ -32,8 +33,10 @@ export component DeleteChunkDialog inherits Rectangle {
 
         DialogSeparator {}
 
-        Rectangle {
-            preferred-height: 100%;
+        ScrollView {
+            min-height: 0px;
+            viewport-width: self.visible-width;
+            vertical-stretch: 1;
             VerticalBox {
                 padding-top: 12px;
                 padding-bottom: 12px;
@@ -45,11 +48,14 @@ export component DeleteChunkDialog inherits Rectangle {
         }
 
         HorizontalBox {
+            padding: 0px;
+            height: 32px;
             alignment: end;
             spacing: 10px;
 
             Button {
-                text: "Отменить";
+                text: "Cancel";
+                width: 80px;
                 primary: false;
                 clicked => {
                     root.cancel();
@@ -57,6 +63,7 @@ export component DeleteChunkDialog inherits Rectangle {
             }
             Button {
                 text: "Delete";
+                width: 88px;
                 primary: true;
                 clicked => {
                     root.confirm();

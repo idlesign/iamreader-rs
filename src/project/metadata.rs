@@ -1,9 +1,10 @@
-use crate::project::project::{ProjectFile, Meta, MarkerSettings};
+use crate::audio::export_wav::{inspect, update_sizes, WavInfo};
+use crate::project::project::{MarkerSettings, Meta, ProjectFile};
 use crate::utils::assets;
-use std::path::Path;
-use std::collections::HashMap;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use log::warn;
+use std::collections::HashMap;
+use std::path::Path;
 
 /// Записывает метаданные (ID3 теги) в аудиофайл
 pub fn write_audio_tags(
@@ -17,19 +18,41 @@ pub fn write_audio_tags(
     sample_rate: u32,
     channels: u16,
 ) -> Result<()> {
-    use id3::{Tag, TagLike, Frame, Content};
-    use id3::frame::PictureType;
-    use std::fs;
     use chrono::Datelike;
-    
+    use id3::frame::PictureType;
+    use id3::{Content, Frame, Tag, TagLike};
+    use std::fs;
+
+    // Validate the complete WAV container before making any changes. The export
+    // workspace owns this file; publication happens only after all metadata succeeds.
+    let wav_info = if output_path.extension().and_then(|s| s.to_str()) == Some("wav") {
+        let info = inspect(output_path)?;
+        anyhow::ensure!(info.sample_rate == sample_rate, "WAV sample rate mismatch");
+        anyhow::ensure!(info.channels == channels, "WAV channel count mismatch");
+        for (_, position) in section_markers {
+            anyhow::ensure!(
+                position.is_multiple_of(u64::from(channels)),
+                "Marker is not frame-aligned"
+            );
+            anyhow::ensure!(
+                position / u64::from(channels) <= info.frames,
+                "Marker exceeds WAV duration"
+            );
+        }
+        Some(info)
+    } else {
+        None
+    };
+
     // Определяем значения полей метаданных
     // Проверяем, есть ли среди файлов записи с section маркерами
     let mut has_section_marker = false;
     let mut section_file: Option<&ProjectFile> = None;
-    
+
     for file in files.iter().rev() {
         let file_has_section = file.markers.iter().any(|marker_name| {
-            markers.get(marker_name)
+            markers
+                .get(marker_name)
                 .map(|settings| settings.section)
                 .unwrap_or(false)
         });
@@ -39,7 +62,7 @@ pub fn write_audio_tags(
             break; // Берем самую свежую запись с section маркером
         }
     }
-    
+
     // Определяем значения полей
     let title = match section_file {
         Some(sf) if has_section_marker && !sf.title.is_empty() => sf.title.clone(),
@@ -53,20 +76,21 @@ pub fn write_audio_tags(
         Some(sf) if has_section_marker && !sf.year.is_empty() => sf.year.clone(),
         _ => meta.year.clone(),
     };
-    
+
     let year = chrono::Local::now().year();
     let composer = meta.reader.clone();
     let album_artist = meta.reader.clone();
     let album = meta.title.clone();
     let genre = "Audiobook".to_string();
     let software = format!("iamreader {}", env!("CARGO_PKG_VERSION"));
-    
+
     // Открываем или создаем теги
-    let mut tag = match Tag::read_from_path(output_path) {
-        Ok(t) => t,
-        Err(_) => Tag::new(),
+    let mut tag = if let Some(info) = &wav_info {
+        read_wav_id3(output_path, info)?
+    } else {
+        Tag::read_from_path(output_path).unwrap_or_else(|_| Tag::new())
     };
-    
+
     // Устанавливаем теги
     tag.set_title(title);
     tag.set_artist(artist);
@@ -90,19 +114,19 @@ pub fn write_audio_tags(
         minute: None,
         second: None,
     });
-    
+
     // Composer через кастомный фрейм
     if !composer.is_empty() {
         tag.add_frame(Frame::with_content("TCOM", Content::Text(composer)));
     }
-    
+
     tag.set_album_artist(album_artist);
     tag.set_album(album);
     tag.set_genre(genre);
-    
+
     // Добавляем software tag (TSSE)
     tag.add_frame(Frame::with_content("TSSE", Content::Text(software)));
-    
+
     // Загружаем обложку, если указана
     if !cover.is_empty() {
         let cover_path = project_dir.join(cover);
@@ -114,22 +138,27 @@ pub fn write_audio_tags(
             if let Some(data) = assets::get_asset_file(cover)? {
                 data
             } else {
-                warn!("Cover file not found: {:?} (also checked embedded assets)", cover);
-                return Ok(());
+                warn!(
+                    "Cover file not found: {:?} (also checked embedded assets)",
+                    cover
+                );
+                // A missing optional cover must not skip the tags or WAV table of contents.
+                Vec::new()
             }
         };
-        
+
         if !cover_data.is_empty() {
             // Определяем MIME тип по расширению
             let mime_type = if cover_path.extension().and_then(|s| s.to_str()) == Some("png") {
                 "image/png"
-            } else if cover_path.extension().and_then(|s| s.to_str()) == Some("jpg") || 
-                      cover_path.extension().and_then(|s| s.to_str()) == Some("jpeg") {
+            } else if cover_path.extension().and_then(|s| s.to_str()) == Some("jpg")
+                || cover_path.extension().and_then(|s| s.to_str()) == Some("jpeg")
+            {
                 "image/jpeg"
             } else {
                 "image/jpeg" // По умолчанию
             };
-            
+
             let picture = id3::frame::Picture {
                 mime_type: mime_type.to_string(),
                 picture_type: PictureType::CoverFront,
@@ -139,294 +168,184 @@ pub fn write_audio_tags(
             tag.add_frame(Frame::with_content("APIC", Content::Picture(picture)));
         }
     }
-    
-    // Добавляем Chapter Frame для MP3, если есть section_markers
-    if !section_markers.is_empty() && output_path.extension().and_then(|s| s.to_str()) == Some("mp3") {
-        // Для MP3 используем CHAP фрейм (Chapter Frame)
-        // CHAP формат: ID3v2.4 Chapter Frame
-        // Структура: chapter_id (terminated string), start_time (u32, milliseconds), end_time (u32, milliseconds), 
-        // start_offset (u32, bytes), end_offset (u32, bytes), embedded frame list
+
+    // Сохраняем существующее пользовательское представление глав в валидных TXXX.
+    // Это не стандартные CHAP frames: описание различает главы при добавлении в Tag.
+    if !section_markers.is_empty()
+        && output_path.extension().and_then(|s| s.to_str()) == Some("mp3")
+    {
+        anyhow::ensure!(
+            sample_rate > 0 && channels > 0,
+            "MP3 chapter timestamps require a nonzero sample rate and channel count"
+        );
+        let samples_per_second = u128::from(sample_rate) * u128::from(channels);
         for (index, (title, position_samples)) in section_markers.iter().enumerate() {
-            // Конвертируем позицию в сэмплах в миллисекунды
-            let position_ms = (*position_samples as f64 / sample_rate as f64 * 1000.0) as u32;
-            
-            // Определяем end_time для текущей главы (начало следующей или конец файла)
-            let end_time = if index + 1 < section_markers.len() {
-                let next_position_samples = section_markers[index + 1].1;
-                (next_position_samples as f64 / sample_rate as f64 * 1000.0) as u32
-            } else {
-                // Последняя глава - конец файла (нужно будет вычислить из размера файла)
-                // Пока используем большое значение, но лучше бы вычислить из размера файла
-                u32::MAX
-            };
-            
-            // Создаем CHAP фрейм
-            // Формат CHAP: chapter_id (string, null-terminated), start (u32), end (u32), start_offset (u32), end_offset (u32), subframes
+            // Позиции содержат interleaved samples всех каналов; миллисекунды
+            // вычисляются целочисленно без потери точности или насыщения до u32.
+            let position_ms = u128::from(*position_samples) * 1000 / samples_per_second;
             let chapter_id = format!("ch{:02}", index + 1);
-            
-            // Создаем данные для CHAP фрейма
-            let mut chap_data = Vec::new();
-            chap_data.extend_from_slice(chapter_id.as_bytes());
-            chap_data.push(0); // null terminator
-            chap_data.extend_from_slice(&position_ms.to_be_bytes());
-            chap_data.extend_from_slice(&end_time.to_be_bytes());
-            chap_data.extend_from_slice(&0u32.to_be_bytes()); // start_offset
-            chap_data.extend_from_slice(&0u32.to_be_bytes()); // end_offset
-            
-            // Добавляем TIT2 (Title) subframe для главы
-            let title_bytes = title.as_bytes();
-            let title_frame_data = vec![
-                0x54, 0x49, 0x54, 0x32, // "TIT2"
-                ((title_bytes.len() + 1) >> 8) as u8,
-                ((title_bytes.len() + 1) & 0xFF) as u8,
-                0x00, 0x00, // flags
-                0x03, // encoding: UTF-8
-            ];
-            let mut full_title_frame = title_frame_data;
-            full_title_frame.extend_from_slice(title_bytes);
-            full_title_frame.push(0); // null terminator
-            
-            chap_data.extend_from_slice(&full_title_frame);
-            
-            // Создаем фрейм CHAP
-            // Для MP3 используем TXXX фрейм (User defined text) для хранения информации о главах
-            // Формат: "CHAP|chapter_id|position_ms|title"
-            let chap_text = format!("CHAP|{}|{}|{}", chapter_id, position_ms, title);
-            tag.add_frame(Frame::with_content("TXXX", Content::Text(chap_text)));
+            tag.add_frame(id3::frame::ExtendedText {
+                description: format!("CHAP:{chapter_id}"),
+                value: format!("CHAP|{chapter_id}|{position_ms}|{title}"),
+            });
         }
     }
-    
-    // Сохраняем теги
-    tag.write_to_path(output_path, id3::Version::Id3v24)
-        .with_context(|| format!("Failed to write ID3 tags to: {:?}", output_path))?;
-    
-    // Для WAV файлов добавляем cue chunks, если есть section_markers
-    if !section_markers.is_empty() && output_path.extension().and_then(|s| s.to_str()) == Some("wav") {
-        add_wav_cue_chunks(output_path, section_markers, sample_rate, channels)?;
+
+    if let Some(info) = &wav_info {
+        write_wav_metadata(output_path, info, &tag, section_markers)?;
+    } else {
+        tag.write_to_path(output_path, id3::Version::Id3v24)
+            .with_context(|| format!("Failed to write ID3 tags to: {:?}", output_path))?;
     }
-    
     Ok(())
 }
 
-/// Добавляет cue chunks в WAV файл
-fn add_wav_cue_chunks(
-    wav_path: &Path,
+// Only tag bytes are read: id3's container writer must NOT see RF64, which it
+// mistakes for a plain file and would prefix with ID3, invalidating the header.
+fn read_wav_id3(path: &Path, info: &WavInfo) -> Result<id3::Tag> {
+    use std::io::{Read, Seek, SeekFrom};
+    let Some(chunk) = info
+        .chunks
+        .iter()
+        .find(|c| c.id.eq_ignore_ascii_case(b"id3 "))
+    else {
+        return Ok(id3::Tag::new());
+    };
+    let mut file = std::fs::File::open(path)?;
+    file.seek(SeekFrom::Start(chunk.offset + 8))?;
+    let mut bytes = Vec::new();
+    file.take(chunk.size).read_to_end(&mut bytes)?;
+    Ok(id3::Tag::read_from2(std::io::Cursor::new(bytes)).unwrap_or_else(|_| id3::Tag::new()))
+}
+
+fn append_chunk(target: &mut Vec<u8>, id: &[u8; 4], contents: &[u8]) -> Result<()> {
+    let size = u32::try_from(contents.len()).context("WAV metadata chunk exceeds 32-bit size")?;
+    anyhow::ensure!(
+        size != u32::MAX,
+        "WAV metadata chunk size uses reserved sentinel"
+    );
+    target.extend_from_slice(id);
+    target.extend_from_slice(&size.to_le_bytes());
+    target.extend_from_slice(contents);
+    if !size.is_multiple_of(2) {
+        target.push(0);
+    }
+    Ok(())
+}
+
+/// Metadata is proportional to the tag/TOC, never to PCM length. Audio is neither
+/// copied nor shifted. Only private staged exports may be modified by this helper.
+fn write_wav_metadata(
+    path: &Path,
+    info: &WavInfo,
+    tag: &id3::Tag,
     section_markers: &[(String, u64)],
-    _sample_rate: u32,
-    channels: u16,
 ) -> Result<()> {
     use std::fs::OpenOptions;
-    use std::io::{Seek, SeekFrom, Read, Write};
-    
-    // Открываем файл для чтения и записи
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(wav_path)
-        .with_context(|| format!("Failed to open WAV file: {:?}", wav_path))?;
-    
-    // Читаем весь файл
-    let mut wav_data = Vec::new();
-    file.read_to_end(&mut wav_data)
-        .with_context(|| format!("Failed to read WAV file: {:?}", wav_path))?;
-    
-    // Ищем позицию после "data" chunk, чтобы вставить cue chunk перед ним
-    // WAV формат: RIFF header, fmt chunk, data chunk, и другие chunks
-    let mut data_pos = None;
-    let mut i = 12; // После RIFF header (12 bytes)
-    
-    while i + 8 <= wav_data.len() {
-        let chunk_id = &wav_data[i..i+4];
-        let chunk_size = u32::from_le_bytes([
-            wav_data[i+4],
-            wav_data[i+5],
-            wav_data[i+6],
-            wav_data[i+7],
-        ]) as usize;
-        
-        if chunk_id == b"data" {
-            data_pos = Some(i);
+    use std::io::{Read, Seek, SeekFrom, Write};
+
+    let mut prepared = Vec::new();
+    let mut id3_bytes = Vec::new();
+    tag.write_to(&mut id3_bytes, id3::Version::Id3v24)?;
+    append_chunk(&mut prepared, b"id3 ", &id3_bytes)?;
+
+    let count = u32::try_from(section_markers.len()).context("Too many WAV markers")?;
+    let needs_wide_markers = section_markers
+        .iter()
+        .any(|(_, pos)| pos / u64::from(info.channels) > u64::from(u32::MAX));
+    let mut cues = Vec::new();
+    let mut labels = b"adtl".to_vec();
+    let mut wide_markers = Vec::new();
+    // Do not publish a misleading partial legacy TOC when 32-bit positions are
+    // insufficient. r64m carries the complete 64-bit TOC (EBU Tech 3306, Annex A.4).
+    if count > 0 && !needs_wide_markers {
+        cues.extend_from_slice(&count.to_le_bytes());
+    }
+    for (index, (title, position)) in section_markers.iter().enumerate() {
+        anyhow::ensure!(!title.contains('\0'), "WAV marker title contains NUL");
+        let id = u32::try_from(index + 1)?;
+        let frame = position / u64::from(info.channels);
+        if !needs_wide_markers {
+            let frame = u32::try_from(frame)?;
+            cues.extend_from_slice(&id.to_le_bytes());
+            cues.extend_from_slice(&frame.to_le_bytes());
+            cues.extend_from_slice(b"data");
+            cues.extend_from_slice(&0u32.to_le_bytes()); // chunkStart: only used by wave lists
+            cues.extend_from_slice(&0u32.to_le_bytes()); // blockStart: not used by PCM
+            cues.extend_from_slice(&frame.to_le_bytes());
+        }
+        let mut label = id.to_le_bytes().to_vec();
+        label.extend_from_slice(title.as_bytes());
+        label.push(0);
+        append_chunk(&mut labels, b"labl", &label)?;
+        if needs_wide_markers {
+            let mut entry = [0u8; 320];
+            // valid + UTF-8; long strings refer to the unabridged LIST/labl entry.
+            let flags = if title.len() <= 255 { 0x11u32 } else { 0x19u32 };
+            entry[..4].copy_from_slice(&flags.to_le_bytes());
+            entry[4..12].copy_from_slice(&frame.to_le_bytes());
+            if title.len() <= 255 {
+                entry[28..28 + title.len()].copy_from_slice(title.as_bytes());
+            } else {
+                entry[284..288].copy_from_slice(&id.to_le_bytes());
+            }
+            wide_markers.extend_from_slice(&entry);
+        }
+    }
+    if !cues.is_empty() {
+        append_chunk(&mut prepared, b"cue ", &cues)?;
+    }
+    if count > 0 {
+        append_chunk(&mut prepared, b"LIST", &labels)?;
+    }
+    if !wide_markers.is_empty() {
+        append_chunk(&mut prepared, b"r64m", &wide_markers)?;
+    }
+
+    let mut file = OpenOptions::new().read(true).write(true).open(path)?;
+    let mut obsolete = Vec::new();
+    for chunk in &info.chunks {
+        let owned = if chunk.id.eq_ignore_ascii_case(b"LIST") && chunk.size >= 4 {
+            file.seek(SeekFrom::Start(chunk.offset + 8))?;
+            let mut kind = [0u8; 4];
+            file.read_exact(&mut kind)?;
+            kind == *b"adtl"
+        } else {
+            chunk.id.eq_ignore_ascii_case(b"id3 ") || chunk.id == *b"cue " || chunk.id == *b"r64m"
+        };
+        if owned {
+            obsolete.push(chunk.offset);
+        }
+    }
+    // Reuse a trailing metadata region instead of growing on every tag update.
+    let mut append_at = info.file_len;
+    for chunk in info.chunks.iter().rev() {
+        if obsolete.binary_search(&chunk.offset).is_err() {
             break;
         }
-        
-        i += 8 + chunk_size;
-        // Выравнивание на 2 байта
-        if chunk_size % 2 != 0 {
-            i += 1;
-        }
+        append_at = chunk.offset;
     }
-    
-    if data_pos.is_none() {
-        warn!("Could not find 'data' chunk in WAV file, skipping cue chunks");
-        return Ok(());
+    let new_len = append_at
+        .checked_add(u64::try_from(prepared.len())?)
+        .context("WAV size overflow")?;
+    info.validate_file_len(new_len)?;
+    file.seek(SeekFrom::Start(append_at))?;
+    file.write_all(&prepared)
+        .context("Failed to write WAV metadata")?;
+    file.set_len(new_len)?;
+    for offset in obsolete.into_iter().filter(|offset| *offset < append_at) {
+        file.seek(SeekFrom::Start(offset))?;
+        file.write_all(b"JUNK")?;
     }
-    
-    let data_pos = data_pos.unwrap();
-    
-    // Получаем размер data chunk
-    let _data_chunk_size = u32::from_le_bytes([
-        wav_data[data_pos + 4],
-        wav_data[data_pos + 5],
-        wav_data[data_pos + 6],
-        wav_data[data_pos + 7],
-    ]);
-    
-    // Создаем cue chunk
-    // Cue chunk format:
-    // - "cue " (4 bytes)
-    // - chunk_size (4 bytes, little-endian)
-    // - num_cue_points (4 bytes, little-endian)
-    // - для каждой cue point:
-    //   - cue_point_id (4 bytes)
-    //   - position (4 bytes, sample offset в сэмплах на канал)
-    //   - data_chunk_id (4 bytes, "data")
-    //   - chunk_start (4 bytes, позиция начала data chunk)
-    //   - block_start (4 bytes, обычно 0)
-    //   - sample_offset (4 bytes, позиция в сэмплах на канал)
-    
-    let num_cue_points = section_markers.len() as u32;
-    let mut cue_data = Vec::new();
-    cue_data.extend_from_slice(b"cue ");
-    
-    // Размер chunk'а (пока неизвестен, вычислим позже)
-    let cue_size_pos = cue_data.len();
-    cue_data.extend_from_slice(&0u32.to_le_bytes());
-    
-    cue_data.extend_from_slice(&num_cue_points.to_le_bytes());
-    
-    // Вычисляем размеры chunks для правильного вычисления chunk_start
-    // Пока создаем cue points с временным chunk_start, потом обновим
-    let mut cue_points_data = Vec::new();
-    for (index, (_, position_samples)) in section_markers.iter().enumerate() {
-        let cue_point_id = (index + 1) as u32;
-        // Позиция должна быть в сэмплах на канал, а не в общем количестве сэмплов
-        let position_per_channel = (*position_samples / channels as u64) as u32;
-        
-        cue_points_data.push((cue_point_id, position_per_channel));
-    }
-    
-    // Добавляем cue points (chunk_start будет обновлен позже)
-    for (cue_point_id, position_per_channel) in &cue_points_data {
-        cue_data.extend_from_slice(&cue_point_id.to_le_bytes());
-        cue_data.extend_from_slice(&position_per_channel.to_le_bytes());
-        cue_data.extend_from_slice(b"data");
-        cue_data.extend_from_slice(&0u32.to_le_bytes()); // chunk_start - будет обновлен позже
-        cue_data.extend_from_slice(&0u32.to_le_bytes()); // block_start - обычно 0
-        cue_data.extend_from_slice(&position_per_channel.to_le_bytes()); // sample_offset - позиция в сэмплах на канал
-    }
-    
-    // Обновляем размер chunk'а
-    let cue_size = (cue_data.len() - 8) as u32; // минус "cue " и размер
-    // Размер chunk'а должен быть четным
-    let cue_size_aligned = if cue_size % 2 == 0 { cue_size } else { cue_size + 1 };
-    let size_bytes = cue_size_aligned.to_le_bytes();
-    cue_data[cue_size_pos] = size_bytes[0];
-    cue_data[cue_size_pos + 1] = size_bytes[1];
-    cue_data[cue_size_pos + 2] = size_bytes[2];
-    cue_data[cue_size_pos + 3] = size_bytes[3];
-    
-    // Если размер нечетный, добавляем padding байт
-    if cue_size % 2 != 0 {
-        cue_data.push(0);
-    }
-    
-    // Вычисляем новую позицию data chunk после вставки chunks
-    // Размер данных до data chunk + размер cue chunk + размер LIST chunk (пока неизвестен, но вычислим позже)
-    // Пока используем приблизительное значение, потом обновим после создания LIST chunk
-    let _approx_list_size = 100; // приблизительный размер LIST chunk
-    let _new_data_start_approx = data_pos + cue_data.len() + _approx_list_size + 8;
-    
-    // Создаем LIST chunk с adtl subchunk для меток (labels)
-    // LIST chunk format:
-    // - "LIST" (4 bytes)
-    // - chunk_size (4 bytes)
-    // - "adtl" (4 bytes)
-    // - для каждой метки:
-    //   - "labl" (4 bytes)
-    //   - size (4 bytes)
-    //   - cue_point_id (4 bytes)
-    //   - text (null-terminated string)
-    
-    let mut list_data = Vec::new();
-    list_data.extend_from_slice(b"LIST");
-    
-    let list_size_pos = list_data.len();
-    list_data.extend_from_slice(&0u32.to_le_bytes());
-    
-    list_data.extend_from_slice(b"adtl");
-    
-    for (index, (title, _)) in section_markers.iter().enumerate() {
-        let cue_point_id = (index + 1) as u32;
-        
-        // labl subchunk
-        list_data.extend_from_slice(b"labl");
-        
-        // Используем UTF-8 напрямую
-        let title_bytes = title.as_bytes();
-        
-        let labl_size = (4 + title_bytes.len() + 1) as u32; // cue_point_id + text + null terminator
-        list_data.extend_from_slice(&labl_size.to_le_bytes());
-        list_data.extend_from_slice(&cue_point_id.to_le_bytes());
-        list_data.extend_from_slice(title_bytes);
-        list_data.push(0); // null terminator
-    }
-    
-    // Обновляем размер LIST chunk'а
-    let list_size = (list_data.len() - 8) as u32; // минус "LIST" и размер
-    // Размер chunk'а должен быть четным
-    let list_size_aligned = if list_size % 2 == 0 { list_size } else { list_size + 1 };
-    let list_size_bytes = list_size_aligned.to_le_bytes();
-    list_data[list_size_pos] = list_size_bytes[0];
-    list_data[list_size_pos + 1] = list_size_bytes[1];
-    list_data[list_size_pos + 2] = list_size_bytes[2];
-    list_data[list_size_pos + 3] = list_size_bytes[3];
-    
-    // Если размер нечетный, добавляем padding байт
-    if list_size % 2 != 0 {
-        list_data.push(0);
-    }
-    
-    // Вычисляем новую позицию data chunk после вставки chunks
-    // data_pos - позиция начала "data" chunk в исходном файле (байтовое смещение от начала файла)
-    // После вставки cue и LIST chunks перед data chunk, data chunk сдвинется на размер этих chunks
-    let inserted_chunks_size = cue_data.len() + list_data.len();
-    // chunk_start должен указывать на байтовое смещение от начала файла до начала "data" chunk header (не данных!)
-    // После вставки chunks, data chunk будет на позиции data_pos + inserted_chunks_size
-    let new_data_start = data_pos + inserted_chunks_size;
-    
-    // Обновляем chunk_start в cue points в cue_data
-    // chunk_start находится на позиции: "cue " (4) + size (4) + num_points (4) + для каждой точки: id (4) + position (4) + "data" (4) = 20 байт от начала cue point
-    let cue_point_size = 24; // размер одной cue point (id + position + "data" + chunk_start + block_start + sample_offset)
-    for (i, _) in cue_points_data.iter().enumerate() {
-        let chunk_start_offset = 8 + 4 + (i * cue_point_size) + 4 + 4 + 4; // "cue " + size + num_points + id + position + "data"
-        let chunk_start_bytes = (new_data_start as u32).to_le_bytes();
-        cue_data[chunk_start_offset] = chunk_start_bytes[0];
-        cue_data[chunk_start_offset + 1] = chunk_start_bytes[1];
-        cue_data[chunk_start_offset + 2] = chunk_start_bytes[2];
-        cue_data[chunk_start_offset + 3] = chunk_start_bytes[3];
-    }
-    
-    // Вставляем cue и LIST chunks перед data chunk
-    let mut new_wav_data = Vec::new();
-    new_wav_data.extend_from_slice(&wav_data[..data_pos]);
-    new_wav_data.extend_from_slice(&cue_data);
-    new_wav_data.extend_from_slice(&list_data);
-    new_wav_data.extend_from_slice(&wav_data[data_pos..]);
-    
-    // Обновляем размер RIFF chunk
-    let riff_size = (new_wav_data.len() - 8) as u32; // минус "RIFF" и размер
-    let riff_size_bytes = riff_size.to_le_bytes();
-    new_wav_data[4] = riff_size_bytes[0];
-    new_wav_data[5] = riff_size_bytes[1];
-    new_wav_data[6] = riff_size_bytes[2];
-    new_wav_data[7] = riff_size_bytes[3];
-    
-    // Записываем обновленный файл
-    file.seek(SeekFrom::Start(0))?;
-    file.write_all(&new_wav_data)
-        .with_context(|| format!("Failed to write updated WAV file: {:?}", wav_path))?;
-    file.set_len(new_wav_data.len() as u64)?;
-    
+    update_sizes(&mut file, info, new_len)?;
+    file.flush()?;
     Ok(())
 }
 
+#[cfg(test)]
+#[path = "metadata_tests.rs"]
+mod tests;
+
+#[cfg(test)]
+#[path = "metadata_large_tests.rs"]
+mod large_tests;

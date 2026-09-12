@@ -1,49 +1,51 @@
-import { VerticalBox, ScrollView } from "std-widgets.slint";
+import { VerticalBox, HorizontalBox, ScrollView, Button } from "std-widgets.slint";
 import { DialogHeader, DialogSeparator } from "cmp_dialog_header.slint";
 
 export component TocDialog inherits Rectangle {
-    width: 500px;
-    height: 400px;
+    width: 520px;
+    height: 480px;
     background: #ffffff;
-    border-width: 2px;
-    border-color: #333;
-
+    border-width: 1px;
+    border-color: #94a3b8;
+    border-radius: 6px;
     in property <string> toc-list-text: "";
-
     callback cancel();
 
-    TouchArea {
-        width: 100%;
-        height: 100%;
-        clicked => { }
-    }
+    TouchArea { clicked => { } }
     VerticalBox {
-        height: 100%;
-        padding: 20px;
-        spacing: 0px;
-
+        padding: 12px;
+        spacing: 8px;
+        min-width: 0px;
         DialogHeader {
             title: "Table of contents";
-            cancel => {
-                root.cancel();
-            }
+            cancel => { root.cancel(); }
         }
-
         DialogSeparator {}
-
         ScrollView {
-            preferred-height: 100%;
+            min-height: 0px;
+            min-width: 0px;
+            vertical-stretch: 1;
+            viewport-width: self.visible-width;
             VerticalBox {
-                padding-left: 5px;
-                padding-right: 5px;
-                padding-top: 5px;
-                padding-bottom: 5px;
+                padding: 4px;
+                min-width: 0px;
+                alignment: start;
                 Text {
                     text: root.toc-list-text;
-                    width: 100%;
                     wrap: word-wrap;
-                    color: #333;
+                    color: #334155;
+                    font-size: 14px;
                 }
+            }
+        }
+        HorizontalBox {
+            padding: 0px;
+            height: 32px;
+            alignment: end;
+            Button {
+                text: "Close";
+                width: 88px;
+                clicked => { root.cancel(); }
             }
         }
     }

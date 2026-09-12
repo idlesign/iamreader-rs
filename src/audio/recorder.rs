@@ -1,10 +1,49 @@
+use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{Device, Host, SampleFormat, StreamConfig, SizedSample};
+use cpal::{Device, Host, SampleFormat, SizedSample, StreamConfig};
+use crossbeam_channel::Sender;
 use hound::{WavSpec, WavWriter};
 use std::path::PathBuf;
 use std::sync::Arc;
-use crossbeam_channel::Sender;
-use anyhow::{Result, Context};
+
+/// A recording file is created exclusively; sample errors are reported at finalization.
+pub struct RecordingWriter {
+    writer: WavWriter<std::io::BufWriter<std::fs::File>>,
+    error: Option<hound::Error>,
+}
+
+impl RecordingWriter {
+    pub fn create_new(path: &std::path::Path, spec: WavSpec) -> Result<Self> {
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .with_context(|| format!("Failed to create new recording: {:?}", path))?;
+        let writer = WavWriter::new(std::io::BufWriter::new(file), spec)
+            .with_context(|| format!("Failed to write WAV header: {:?}", path))?;
+        Ok(Self {
+            writer,
+            error: None,
+        })
+    }
+
+    pub fn write_sample(&mut self, sample: f32) {
+        if self.error.is_none() {
+            self.error = self.writer.write_sample(sample).err();
+        }
+    }
+
+    pub fn finalize(self) -> Result<()> {
+        if let Some(error) = self.error {
+            return Err(error).context("Recording samples could not be written");
+        }
+        self.writer
+            .finalize()
+            .context("Failed to finalize recording")
+    }
+}
+
+pub type SharedRecordingWriter = Arc<std::sync::Mutex<Option<RecordingWriter>>>;
 
 pub struct AudioRecorder {
     _host: Host,
@@ -19,17 +58,17 @@ impl AudioRecorder {
         let device = host
             .default_input_device()
             .context("No input device available")?;
-        
+
         // Логируем информацию об устройстве
         if let Ok(name) = device.name() {
             log::info!("Using input device: {}", name);
         }
-        
+
         // Устанавливаем формат: stereo 44100hz 32bit float
         // Пытаемся найти подходящую конфигурацию
         let mut config_opt: Option<StreamConfig> = None;
         let mut sample_format = SampleFormat::F32;
-        
+
         if let Ok(supported_configs) = device.supported_input_configs() {
             for sc in supported_configs {
                 if sc.channels() == 2 {
@@ -46,10 +85,14 @@ impl AudioRecorder {
                 }
             }
         }
-        
+
         let config = if let Some(cfg) = config_opt {
-            log::info!("Using preferred config: {} channels, {} Hz, {:?}", 
-                      cfg.channels, cfg.sample_rate.0, sample_format);
+            log::info!(
+                "Using preferred config: {} channels, {} Hz, {:?}",
+                cfg.channels,
+                cfg.sample_rate.0,
+                sample_format
+            );
             cfg
         } else {
             // Если не нашли подходящую конфигурацию, используем дефолтную как есть
@@ -58,8 +101,12 @@ impl AudioRecorder {
                 .default_input_config()
                 .context("Failed to get default input config")?;
             sample_format = default_config.sample_format();
-            log::info!("Using default config: {} channels, {} Hz, {:?}", 
-                      default_config.channels(), default_config.sample_rate().0, sample_format);
+            log::info!(
+                "Using default config: {} channels, {} Hz, {:?}",
+                default_config.channels(),
+                default_config.sample_rate().0,
+                sample_format
+            );
             default_config.into()
         };
 
@@ -75,7 +122,7 @@ impl AudioRecorder {
         &self,
         output_path: PathBuf,
         level_tx: Sender<f32>,
-    ) -> Result<(cpal::Stream, Arc<std::sync::Mutex<Option<WavWriter<std::io::BufWriter<std::fs::File>>>>>)> {
+    ) -> Result<(cpal::Stream, SharedRecordingWriter)> {
         // Всегда используем 32-bit float для записи
         let spec = WavSpec {
             channels: self.config.channels as u16,
@@ -84,8 +131,7 @@ impl AudioRecorder {
             sample_format: hound::SampleFormat::Float,
         };
 
-        let writer = WavWriter::create(&output_path, spec)
-            .with_context(|| format!("Failed to create WAV writer: {:?}", output_path))?;
+        let writer = RecordingWriter::create_new(&output_path, spec)?;
 
         // Используем Option<WavWriter> для безопасной финализации
         let writer = Arc::new(std::sync::Mutex::new(Some(writer)));
@@ -93,14 +139,30 @@ impl AudioRecorder {
         let level_tx_clone = level_tx.clone();
 
         let stream = match self.sample_format {
-            SampleFormat::I8 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i8)?,
-            SampleFormat::U8 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_u8)?,
-            SampleFormat::I16 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i16)?,
-            SampleFormat::U16 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_u16)?,
-            SampleFormat::I32 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i32)?,
-            SampleFormat::U32 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_u32)?,
-            SampleFormat::F32 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_f32)?,
-            SampleFormat::F64 => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_f64)?,
+            SampleFormat::I8 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i8)?
+            }
+            SampleFormat::U8 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_u8)?
+            }
+            SampleFormat::I16 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i16)?
+            }
+            SampleFormat::U16 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_u16)?
+            }
+            SampleFormat::I32 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i32)?
+            }
+            SampleFormat::U32 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_u32)?
+            }
+            SampleFormat::F32 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_f32)?
+            }
+            SampleFormat::F64 => {
+                self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_f64)?
+            }
             _ => self.build_stream(writer_clone, level_tx_clone, Self::sample_to_f32_i16)?,
         };
 
@@ -154,7 +216,7 @@ impl AudioRecorder {
 
     fn build_stream<T, F>(
         &self,
-        writer: Arc<std::sync::Mutex<Option<WavWriter<std::io::BufWriter<std::fs::File>>>>>,
+        writer: SharedRecordingWriter,
         level_tx: Sender<f32>,
         convert: F,
     ) -> Result<cpal::Stream>
@@ -163,37 +225,37 @@ impl AudioRecorder {
         F: Fn(T) -> f32 + Send + 'static + Copy,
     {
         let err_fn = |err| eprintln!("Error in audio stream: {}", err);
-        
+
         let stream = self.device.build_input_stream(
             &self.config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
                 if let Ok(mut guard) = writer.lock() {
                     if let Some(ref mut w) = *guard {
-                    let mut max_level = 0.0f32;
-                    
-                    // Обрабатываем все сэмплы
-                    // data содержит чередующиеся сэмплы: left, right, left, right, ...
-                    // Для стерео записываем оба канала, для моно - один
-                    for sample in data.iter() {
-                        let mut sample_f32 = convert(*sample);
-                        let abs = sample_f32.abs();
-                        if abs > max_level {
-                            max_level = abs;
+                        let mut max_level = 0.0f32;
+
+                        // Обрабатываем все сэмплы
+                        // data содержит чередующиеся сэмплы: left, right, left, right, ...
+                        // Для стерео записываем оба канала, для моно - один
+                        for sample in data.iter() {
+                            let mut sample_f32 = convert(*sample);
+                            let abs = sample_f32.abs();
+                            if abs > max_level {
+                                max_level = abs;
+                            }
+
+                            // Мягкое ограничение: обрезаем только экстремальные значения
+                            // чтобы избежать клиппинга, но сохранить динамику
+                            if sample_f32 > 1.0 {
+                                sample_f32 = 1.0;
+                            } else if sample_f32 < -1.0 {
+                                sample_f32 = -1.0;
+                            }
+
+                            // Записываем сэмпл (hound автоматически обработает каналы)
+                            w.write_sample(sample_f32);
                         }
-                        
-                        // Мягкое ограничение: обрезаем только экстремальные значения
-                        // чтобы избежать клиппинга, но сохранить динамику
-                        if sample_f32 > 1.0 {
-                            sample_f32 = 1.0;
-                        } else if sample_f32 < -1.0 {
-                            sample_f32 = -1.0;
-                        }
-                        
-                        // Записываем сэмпл (hound автоматически обработает каналы)
-                        w.write_sample(sample_f32).ok();
-                    }
-                    
-                    let _ = level_tx.try_send(max_level);
+
+                        let _ = level_tx.try_send(max_level);
                     }
                 }
             },
@@ -204,26 +266,43 @@ impl AudioRecorder {
         Ok(stream)
     }
 
-    pub fn start_level_monitoring(
-        &self,
-        level_tx: Sender<f32>,
-    ) -> Result<cpal::Stream> {
+    pub fn start_level_monitoring(&self, level_tx: Sender<f32>) -> Result<cpal::Stream> {
         let level_tx_clone = level_tx.clone();
         let err_fn = |err| eprintln!("Error in level monitoring stream: {}", err);
-        
+
         let stream = match self.sample_format {
-            SampleFormat::I8 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i8)?,
-            SampleFormat::U8 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_u8)?,
-            SampleFormat::I16 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i16)?,
-            SampleFormat::U16 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_u16)?,
-            SampleFormat::I32 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i32)?,
-            SampleFormat::U32 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_u32)?,
-            SampleFormat::F32 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_f32)?,
-            SampleFormat::F64 => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_f64)?,
-            _ => self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i16)?,
+            SampleFormat::I8 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i8)?
+            }
+            SampleFormat::U8 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_u8)?
+            }
+            SampleFormat::I16 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i16)?
+            }
+            SampleFormat::U16 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_u16)?
+            }
+            SampleFormat::I32 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i32)?
+            }
+            SampleFormat::U32 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_u32)?
+            }
+            SampleFormat::F32 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_f32)?
+            }
+            SampleFormat::F64 => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_f64)?
+            }
+            _ => {
+                self.build_level_monitoring_stream(level_tx_clone, err_fn, Self::sample_to_f32_i16)?
+            }
         };
 
-        stream.play().context("Failed to start level monitoring stream")?;
+        stream
+            .play()
+            .context("Failed to start level monitoring stream")?;
 
         Ok(stream)
     }
@@ -242,7 +321,7 @@ impl AudioRecorder {
             &self.config,
             move |data: &[T], _: &cpal::InputCallbackInfo| {
                 let mut max_level = 0.0f32;
-                
+
                 // Обрабатываем все сэмплы
                 for sample in data.iter() {
                     let sample_f32 = convert(*sample);
@@ -251,7 +330,7 @@ impl AudioRecorder {
                         max_level = abs;
                     }
                 }
-                
+
                 let _ = level_tx.try_send(max_level);
             },
             err_fn,
@@ -262,4 +341,6 @@ impl AudioRecorder {
     }
 }
 
-
+#[cfg(test)]
+#[path = "recorder_tests.rs"]
+mod tests;
