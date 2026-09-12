@@ -37,5 +37,5 @@ pub fn models_dir() -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "paths_tests.rs"]
+#[path = "../../tests/utils/paths_tests.rs"]
 mod tests;

@@ -336,5 +336,5 @@ fn atomic_publish(_workspace: &File, _project: &File, _replace_existing: bool) -
 }
 
 #[cfg(all(test, target_os = "linux"))]
-#[path = "export_workspace_tests.rs"]
+#[path = "../../tests/project/export_workspace_tests.rs"]
 mod tests;

@@ -606,13 +606,13 @@ impl Project {
 }
 
 #[cfg(test)]
-#[path = "project_tests.rs"]
+#[path = "../../tests/project/project_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "smoke_tests.rs"]
+#[path = "../../tests/project/smoke_tests.rs"]
 mod smoke_tests;
 
 #[cfg(all(test, target_os = "linux"))]
-#[path = "resource_profile.rs"]
+#[path = "../../tests/project/resource_profile.rs"]
 mod resource_profile;

@@ -243,5 +243,5 @@ pub fn read_waveform_samples(path: &Path, max_samples: usize, debug: bool) -> Re
 }
 
 #[cfg(test)]
-#[path = "waveform_tests.rs"]
+#[path = "../../tests/audio/waveform_tests.rs"]
 mod tests;

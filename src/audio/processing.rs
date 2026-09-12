@@ -1038,5 +1038,5 @@ pub fn encode_wav_to_mp3(
 }
 
 #[cfg(test)]
-#[path = "processing_tests.rs"]
+#[path = "../../tests/audio/processing_tests.rs"]
 mod tests;

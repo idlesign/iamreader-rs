@@ -107,5 +107,5 @@ pub fn normalize_export_in_place(
 }
 
 #[cfg(test)]
-#[path = "normalize_export_tests.rs"]
+#[path = "../../tests/audio/normalize_export_tests.rs"]
 mod tests;

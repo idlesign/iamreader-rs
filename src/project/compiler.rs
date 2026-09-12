@@ -24,19 +24,19 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 #[cfg(test)]
-#[path = "compiler_tests.rs"]
+#[path = "../../tests/project/compiler_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "compiler_cancel_tests.rs"]
+#[path = "../../tests/project/compiler_cancel_tests.rs"]
 mod cancel_tests;
 
 #[cfg(test)]
-#[path = "compiler_disk_tests.rs"]
+#[path = "../../tests/project/compiler_disk_tests.rs"]
 mod disk_tests;
 
 #[cfg(test)]
-#[path = "compiler_pcm_tests.rs"]
+#[path = "../../tests/project/compiler_pcm_tests.rs"]
 mod pcm_tests;
 
 /// Индексы стадий: 0 prepare, 1 denoise, 2 process markers, 3 normalize/write

@@ -343,9 +343,9 @@ fn write_wav_metadata(
 }
 
 #[cfg(test)]
-#[path = "metadata_tests.rs"]
+#[path = "../../tests/project/metadata_tests.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "metadata_large_tests.rs"]
+#[path = "../../tests/project/metadata_large_tests.rs"]
 mod large_tests;

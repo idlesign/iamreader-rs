@@ -342,5 +342,5 @@ impl AudioRecorder {
 }
 
 #[cfg(test)]
-#[path = "recorder_tests.rs"]
+#[path = "../../tests/audio/recorder_tests.rs"]
 mod tests;

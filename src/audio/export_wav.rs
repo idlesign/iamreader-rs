@@ -419,5 +419,5 @@ impl ExportWavReader {
 }
 
 #[cfg(test)]
-#[path = "export_wav_tests.rs"]
+#[path = "../../tests/audio/export_wav_tests.rs"]
 mod tests;

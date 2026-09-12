@@ -310,5 +310,5 @@ fn istft(sep_mag: &[f32], sep_cos: &[f32], sep_sin: &[f32], out_len: usize) -> R
 }
 
 #[cfg(test)]
-#[path = "denoise_tests.rs"]
+#[path = "../../tests/audio/denoise_tests.rs"]
 mod tests;

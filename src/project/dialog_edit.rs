@@ -342,5 +342,5 @@ pub fn save_chunk_dialog(
 }
 
 #[cfg(test)]
-#[path = "dialog_edit_tests.rs"]
+#[path = "../../tests/project/dialog_edit_tests.rs"]
 mod tests;

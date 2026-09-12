@@ -220,5 +220,5 @@ impl<'a> CompileProgress<'a> {
 }
 
 #[cfg(test)]
-#[path = "compile_progress_tests.rs"]
+#[path = "../../tests/project/compile_progress_tests.rs"]
 mod tests;

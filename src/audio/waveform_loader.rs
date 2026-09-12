@@ -129,5 +129,5 @@ impl WaveformLoader {
 }
 
 #[cfg(test)]
-#[path = "waveform_loader_tests.rs"]
+#[path = "../../tests/audio/waveform_loader_tests.rs"]
 mod tests;

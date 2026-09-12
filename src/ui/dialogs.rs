@@ -489,5 +489,5 @@ fn show_error(window: &MainWindow, message: &str, field: Option<&str>) {
 }
 
 #[cfg(test)]
-#[path = "dialogs_tests.rs"]
+#[path = "../../tests/ui/dialogs_tests.rs"]
 mod tests;
