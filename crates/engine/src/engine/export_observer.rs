@@ -4,16 +4,21 @@ use std::sync::{Arc, Mutex};
 
 pub(super) struct ObservedExport {
     pub status: Arc<Mutex<ExportStatus>>,
-    pub listener: Arc<dyn ExportObserver>,
+    pub listener: Option<Arc<dyn ExportObserver>>,
+    pub updates: super::event::UpdateNotifier,
 }
 
 impl ExportObserver for ObservedExport {
     fn update(&self, update: ExportUpdate) -> Result<()> {
         self.status.update(update.clone())?;
-        self.listener.update(update)
+        self.updates.notify();
+        if let Some(listener) = &self.listener { listener.update(update)?; }
+
+        Ok(())
     }
 
     fn is_cancellation_requested(&self) -> Result<bool> {
-        Ok(self.status.is_cancellation_requested()? || self.listener.is_cancellation_requested()?)
+        Ok(self.status.is_cancellation_requested()?
+            || self.listener.as_ref().map(|listener| listener.is_cancellation_requested()).transpose()?.unwrap_or(false))
     }
 }

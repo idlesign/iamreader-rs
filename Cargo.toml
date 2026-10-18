@@ -4,19 +4,20 @@ resolver = "2"
 
 [package]
 name = "iamreader"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
+rust-version = "1.95"
 build = "build.rs"
 default-run = "iamreader"
 
 [features]
-default = ["slint-ui"]
-slint-ui = ["dep:slint", "dep:slint-build"]
+default = ["egui-ui"]
+egui-ui = ["dep:eframe"]
 
 [[bin]]
 name = "iamreader"
 path = "src/main.rs"
-required-features = ["slint-ui"]
+required-features = ["egui-ui"]
 
 [[bin]]
 name = "iamreader-headless"
@@ -24,11 +25,10 @@ path = "src/bin/iamreader-headless.rs"
 
 [build-dependencies]
 chrono = "0.4"
-slint-build = { version = "1.14", optional = true }
 
 [dependencies]
-iamreader-engine = { path = "crates/engine", version = "0.2.0" }
-slint = { version = "1.14", features = ["std"], optional = true }
+iamreader-engine = { path = "crates/engine", version = "0.3.0" }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "wayland", "x11"], optional = true }
 log = { version = "0.4", features = ["std"] }
 crossbeam-channel = "0.5"
 anyhow = "1.0"
@@ -38,6 +38,7 @@ ctrlc = "3.5"
 clap = { version = "4", features = ["derive"] }
 
 [dev-dependencies]
+egui_kittest = { version = "0.37", default-features = false }
 tempfile = "3.24"
 serde_json = "1.0"
 hound = "3.5"

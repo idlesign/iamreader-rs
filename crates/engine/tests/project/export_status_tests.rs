@@ -7,11 +7,14 @@ use std::time::Instant;
 fn preserve_queued_cancel_on_worker_start_and_reset_for_a_new_job() {
     let mut status = ExportStatus::default();
     status.apply(ExportUpdate::Started { cancel_requested: false }).unwrap();
+    let first_job = status.job_id;
+    assert_ne!(first_job, 0);
     status.apply(ExportUpdate::Cancelling).unwrap();
 
     status.apply(ExportUpdate::Started { cancel_requested: false }).unwrap();
 
     assert!(status.cancel_requested);
+    assert_eq!(status.job_id, first_job);
     assert_eq!(status.stage, "Cancelling…");
 
     status.apply(ExportUpdate::Finished {
@@ -21,6 +24,7 @@ fn preserve_queued_cancel_on_worker_start_and_reset_for_a_new_job() {
     status.apply(ExportUpdate::Started { cancel_requested: false }).unwrap();
 
     assert!(!status.cancel_requested);
+    assert_ne!(status.job_id, first_job);
     assert!(status.finished_at.is_none());
     assert_eq!(status.stage, "Preparing…");
 }
@@ -121,6 +125,8 @@ fn report_published_warnings_without_changing_success() {
     assert_eq!(status.stages_text.matches('✓').count(), 4);
     assert!(status.finished_at.is_some());
     assert!(!status.publishing);
+    status.apply(ExportUpdate::Started { cancel_requested: false }).unwrap();
+    assert!(status.error_message.is_empty());
 }
 
 #[test]

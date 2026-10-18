@@ -4,7 +4,11 @@ https://github.com/idlesign/iamreader-rs
 
 Приложение для самостоятельного изготовления аудиокниг дикторами
 
+Интерфейс — egui/eframe; движок записи и сборки можно использовать без GUI.
+
 <img src="docs/screenshot.png" width="300">
+
+На снимке — интерфейс egui; звук в демонстрационном проекте синтетический.
 
 ## Особенности
 
@@ -120,6 +124,9 @@ https://github.com/idlesign/iamreader-rs
 
 ### Подготовка окружения
 
+Для сборки нужен Rust 1.95+. Запуск с GUI требует Linux, X11/Wayland и OpenGL.
+Сборка без GUI, управление через FIFO и устройство проекта описаны в [документации](https://github.com/idlesign/iamreader-rs/blob/master/docs/desktop.md).
+
 Запускайте из корня репозитория. Установка системных зависимостей и загрузка моделей:
 
 ```bash
@@ -137,7 +144,7 @@ https://github.com/idlesign/iamreader-rs
 ### Сборка финальная
 
 ```bash
-cargo build --release
+cargo build --locked --release
 ```
 
 Результат: исполняемый файл `target/release/iamreader`.

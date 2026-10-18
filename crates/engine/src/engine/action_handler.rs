@@ -239,13 +239,14 @@ impl Engine {
         let project = self.project.clone();
         let project_path = self.project_path.clone();
         let export = self.export.clone();
-        let observer: Arc<dyn ExportObserver> = if let Some(listener) = &self.export_listener {
-            Arc::new(super::export_observer::ObservedExport { status: export.clone(), listener: listener.clone() })
-        } else { export.clone() };
+        let observer: Arc<dyn ExportObserver> = Arc::new(super::export_observer::ObservedExport {
+            status: export.clone(), listener: self.export_listener.clone(), updates: self.updates.clone(),
+        });
         let debug = self.debug;
         let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
         crate::project::compiler::begin_compile(Some(observer.as_ref()), Some(&cancel))?;
         self.compile_cancel = Some(cancel.clone());
+        let worker_updates = self.updates.clone();
         let spawned = std::thread::Builder::new().name("export-worker".into()).spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 crate::project::compiler::compile_wav_files_static(
@@ -268,6 +269,7 @@ impl Engine {
                     }
                 }
             }
+            worker_updates.notify();
         });
         match spawned {
             Ok(worker) => self.compile_worker = Some(worker),

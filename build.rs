@@ -1,4 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
     let build_date = if let Ok(epoch) = std::env::var("SOURCE_DATE_EPOCH") {
         epoch
             .parse::<i64>()
@@ -10,9 +11,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         now_yyyymmdd()
     };
     println!("cargo:rustc-env=BUILD_DATE={}", build_date);
-    #[cfg(feature = "slint-ui")]
-    slint_build::compile("ui/main.slint")?;
-
     Ok(())
 }
 

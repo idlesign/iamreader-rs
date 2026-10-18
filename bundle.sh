@@ -17,7 +17,7 @@ if [[ -z "$VERSION" ]]; then
     exit 1
 fi
 
-cargo build --release --bin iamreader --target-dir "$SCRIPT_DIR/target"
+cargo build --locked --release --bin iamreader --target-dir "$SCRIPT_DIR/target"
 
 ARCHIVE="$SCRIPT_DIR/iamreader_v${VERSION}.zip"
 STAGING_DIR="$(mktemp -d)"

@@ -60,6 +60,21 @@ pub struct EngineSnapshot {
 }
 
 impl EngineSnapshot {
+    /// Compare observable versions and bounded live data, never all project rows.
+    pub(super) fn revision(&self) -> SnapshotRevision {
+        SnapshotRevision {
+            versions: [self.project_version, self.file_list_version, self.row_update_version, self.waveform_version],
+            selected_index: self.current_file_index,
+            level: self.level.to_bits(),
+            playback_position: self.playback_position.to_bits(),
+            is_recording: self.is_recording,
+            stopped: self.stopped,
+            total_duration: self.total_duration.clone(),
+            total_size: self.total_size.clone(),
+            error_message: self.error_message.clone(),
+        }
+    }
+
     /// Return the cursor for incremental row updates, separate from structural changes.
     pub fn row_update_version(&self) -> u64 {
         self.row_update_version
@@ -89,4 +104,17 @@ impl EngineSnapshot {
             }
         }
     }
+}
+
+#[derive(PartialEq)]
+pub(super) struct SnapshotRevision {
+    versions: [u64; 4],
+    selected_index: i32,
+    level: u32,
+    playback_position: u32,
+    is_recording: bool,
+    stopped: bool,
+    total_duration: String,
+    total_size: String,
+    error_message: String,
 }

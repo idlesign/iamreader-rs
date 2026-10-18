@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use iamreader::{cli, ui};
+use iamreader::{cli, egui_ui};
 
 #[derive(Parser)]
 #[command(about = "Application for recording audiobooks by narrators")]
@@ -14,7 +14,7 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    let frontend = if args.headless { None } else { Some(ui::run as fn(_) -> _) };
+    let frontend = if args.headless { None } else { Some(egui_ui::run as fn(_) -> _) };
 
     cli::run(args.engine, frontend)
 }

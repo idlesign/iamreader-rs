@@ -1,8 +1,8 @@
 use super::audio_backend::{AudioBackend, DeviceAudioBackend, PlaybackSession, RecordingSession};
 use super::command::{ChunkId, EngineCommand};
-use super::event::{CommandFailure, EngineEvent};
+use super::event::{CommandFailure, EngineEvent, UpdateNotifier};
 use super::projection::ProjectionCache;
-use super::snapshot::EngineSnapshot;
+use super::snapshot::{EngineSnapshot, SnapshotRevision};
 use crate::project::dialog_edit::FieldError;
 use crate::project::export_status::{ExportObserver, ExportStatus, ExportUpdate};
 use crate::project::Project;
@@ -84,9 +84,16 @@ pub struct EngineHandle {
     snapshot: Arc<Mutex<EngineSnapshot>>,
     export: Arc<Mutex<ExportStatus>>,
     next_request: Arc<AtomicU64>,
+    updates: UpdateNotifier,
 }
 
 impl EngineHandle {
+    /// Subscribe to coalesced state changes and acknowledgements without polling.
+    /// Each observer has its own bounded one-signal mailbox, initially ready.
+    pub fn subscribe_updates(&self) -> Result<Receiver<()>> {
+        self.updates.subscribe()
+    }
+
     /// Submit without blocking; a full queue is an explicit, retryable caller error.
     pub fn submit(&self, command: EngineCommand) -> Result<EngineTicket> {
         if matches!(command, EngineCommand::CompileCancel) {
@@ -105,7 +112,10 @@ impl EngineHandle {
 
     /// Serialize cancellation with publication immediately, even before the owner tick.
     pub fn request_export_cancellation(&self) -> Result<()> {
-        self.export.update(ExportUpdate::Cancelling)
+        self.export.update(ExportUpdate::Cancelling)?;
+        self.updates.notify();
+
+        Ok(())
     }
 
     /// Read a projection without cloning the full project on every frontend tick.
@@ -163,6 +173,8 @@ pub struct Engine {
     last_snapshot_update: Option<Instant>,
     clock: Box<dyn Fn() -> Instant>,
     stopped: bool,
+    pub(super) updates: UpdateNotifier,
+    last_notice: Option<SnapshotRevision>,
 }
 
 impl Engine {
@@ -191,7 +203,8 @@ impl Engine {
         let (commands, requests) = bounded(COMMAND_CAPACITY);
         let (level_tx, level_rx) = bounded(8);
         let (_, transcription_update_rx) = bounded(1);
-        let handle = EngineHandle { commands, snapshot: snapshot.clone(), export: export.clone(), next_request: Arc::new(AtomicU64::new(1)) };
+        let updates = UpdateNotifier::default();
+        let handle = EngineHandle { commands, snapshot: snapshot.clone(), export: export.clone(), next_request: Arc::new(AtomicU64::new(1)), updates: updates.clone() };
         let mut engine = Self {
             project, project_path, chunks_dir, state: EngineState::Idle, current_index,
             recording_mode: RecordingMode::Append, update_recording_index: None, insert_recording_index: None,
@@ -202,6 +215,7 @@ impl Engine {
             transcription_worker: None, transcription_attempted: false, transcription_model: None, file_list_update_pending: true,
             status_line_update_pending: true, projection_cache: Default::default(), last_snapshot_update: None,
             clock: Box::new(Instant::now), stopped: false,
+            updates, last_notice: None,
         };
         engine.update_snapshot()?;
 
@@ -273,6 +287,7 @@ impl Engine {
         if self.stopped {
             return Ok(());
         }
+        let mut acknowledged = false;
         for _ in 0..COMMAND_CAPACITY {
             let Ok(request) = self.requests.try_recv() else { break };
             let is_edit = matches!(&request.command, EngineCommand::SaveProjectEdit(_));
@@ -290,6 +305,7 @@ impl Engine {
                 message: format!("{error:#}"),
             });
             let _ = request.reply.send(EngineEvent::CommandCompleted { request_id: request.request_id, result });
+            acknowledged = true;
         }
         if self.should_exit {
             return self.shutdown();
@@ -320,7 +336,16 @@ impl Engine {
         if self.last_snapshot_update.is_none_or(|updated| self.elapsed_since(updated) >= SNAPSHOT_INTERVAL) {
             self.update_snapshot()?;
             self.last_snapshot_update = Some(self.now());
+            let (revision, recording) = {
+                let snapshot = self.snapshot.lock().map_err(|_| anyhow::anyhow!("Engine snapshot lock poisoned"))?;
+                (snapshot.revision(), snapshot.is_recording)
+            };
+            if recording || self.last_notice.as_ref() != Some(&revision) {
+                self.updates.notify();
+            }
+            self.last_notice = Some(revision);
         }
+        if acknowledged { self.updates.notify(); }
 
         Ok(())
     }
@@ -334,6 +359,7 @@ impl Engine {
         staged.save(&self.project_path)?;
         self.project = staged;
         self.update_projection_after_change();
+        self.updates.notify();
 
         Ok(true)
     }
@@ -401,6 +427,7 @@ impl Engine {
                 result: Err(CommandFailure { message: "Engine is shut down".into(), field: None }),
             });
         }
+        self.updates.notify();
         anyhow::ensure!(errors.is_empty(), "Engine shutdown failed: {}", errors.join("; "));
 
         Ok(())

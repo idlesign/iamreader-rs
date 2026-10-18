@@ -28,6 +28,8 @@ pub enum ExportUpdate {
 /// A caller's view of the current or most recently completed export.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExportStatus {
+    /// Stable across owner/worker initialization, distinct for each subsequent job.
+    pub job_id: u64,
     pub started: bool,
     pub progress: f32,
     pub stage: String,
@@ -43,6 +45,7 @@ pub struct ExportStatus {
 impl Default for ExportStatus {
     fn default() -> Self {
         Self {
+            job_id: 0,
             started: false,
             progress: 0.0,
             stage: String::new(),
@@ -61,6 +64,9 @@ impl ExportStatus {
     pub fn apply(&mut self, update: ExportUpdate) -> Result<()> {
         match update {
             ExportUpdate::Started { cancel_requested } => {
+                if !self.started || self.finished_at.is_some() {
+                    self.job_id = self.job_id.wrapping_add(1);
+                }
                 let queued_cancel = self.started
                     && self.finished_at.is_none()
                     && self.cancel_requested;
@@ -69,6 +75,7 @@ impl ExportStatus {
                 self.publishing = false;
                 self.cancel_requested = queued_cancel || cancel_requested;
                 self.progress = 0.0;
+                self.error_message.clear();
                 self.stage = if self.cancel_requested { "Cancelling…" } else { "Preparing…" }.into();
                 self.stages_text =
                     "1. prepare →\n2. denoise\n3. process markers\n4. normalize; write".into();

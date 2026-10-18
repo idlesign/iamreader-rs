@@ -1,6 +1,8 @@
 //! FIFO is a transport: it translates the existing grammar to the public engine API.
 
-use crate::action::{translate_action, Action};
+mod command;
+
+pub use command::{parse_fifo_command, resolve_fifo_command, FifoCommand};
 use iamreader_engine::engine::{EngineEvent, EngineHandle, EngineTicket};
 use anyhow::{Context, Result};
 use std::io::Read;
@@ -50,8 +52,7 @@ impl FifoHandler {
                     let line: Vec<_> = buffered.drain(..=end).collect();
                     let line = String::from_utf8_lossy(&line);
                     if line.trim().is_empty() { continue; }
-                    let submitted = parse_fifo_command(line.trim()).and_then(|action| translate_action(action, &handle))
-                        .and_then(|command| command.context("FIFO command has no engine operation"))
+                    let submitted = parse_fifo_command(line.trim()).and_then(|command| resolve_fifo_command(command, &handle))
                         .and_then(|command| handle.submit(command));
                     match submitted {
                         Ok(ticket) => pending.push(ticket),
@@ -95,102 +96,4 @@ impl Drop for FifoHandler {
             }
         }
     }
-}
-
-/// Parse the established FIFO wire syntax without opening a pipe or audio devices.
-pub fn parse_fifo_command(line: &str) -> Result<Action> {
-    let action = if line.to_lowercase().starts_with("record:") {
-        let duration_str = line.split(':').nth(1).unwrap_or("").trim();
-        let duration_secs = duration_str.parse::<u64>().ok();
-        Action::Record { duration_secs }
-    } else if line.to_lowercase().starts_with("goto") {
-        // Команда: goto <index> [p]
-        // index может быть числом или -1 (по умолчанию)
-        // p - опциональный параметр для воспроизведения
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        let index = if parts.len() > 1 {
-            parts[1].parse::<i32>().ok()
-        } else {
-            Some(-1) // По умолчанию -1
-        };
-        let play = parts.len() > 2 && (parts[2] == "p" || parts[2] == "play");
-        Action::Goto { index, play }
-    } else if line.to_lowercase().starts_with("m_add") {
-        // Команда: m_add <x> <marker1> [marker2] ...
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3 {
-            if let Ok(file_index) = parts[1].parse::<i32>() {
-                let markers: Vec<String> = parts[2..].iter().map(|marker| marker.to_string()).collect();
-                Action::AddMarkers { file_index, markers }
-            } else {
-                anyhow::bail!("Invalid file index in m_add command");
-            }
-        } else {
-            anyhow::bail!("m_add requires at least file index and one marker");
-        }
-    } else if line.to_lowercase().starts_with("m_del") {
-        // Команда: m_del <x> <marker1> [marker2] ...
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 3 {
-            if let Ok(file_index) = parts[1].parse::<i32>() {
-                let markers: Vec<String> = parts[2..].iter().map(|marker| marker.to_string()).collect();
-                Action::RemoveMarkers { file_index, markers }
-            } else {
-                anyhow::bail!("Invalid file index in m_del command");
-            }
-        } else {
-            anyhow::bail!("m_del requires at least file index and one marker");
-        }
-    } else if line.to_lowercase().starts_with("m_set") {
-        // Команда: m_set <x> <marker1> [marker2] ...
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            if let Ok(file_index) = parts[1].parse::<i32>() {
-                let markers: Vec<String> = if parts.len() > 2 {
-                    parts[2..].iter().map(|marker| marker.to_string()).collect()
-                } else {
-                    Vec::new()
-                };
-                Action::SetMarkers { file_index, markers }
-            } else {
-                anyhow::bail!("Invalid file index in m_set command");
-            }
-        } else {
-            anyhow::bail!("m_set requires at least file index");
-        }
-    } else if line.to_lowercase().starts_with("trans") {
-        // Команда: trans <x>
-        // x - индекс файла (1-based в UI, нужно конвертировать в project.files индекс)
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() >= 2 {
-            if let Ok(file_index) = parts[1].parse::<i32>() {
-                Action::Transcribe { file_index }
-            } else {
-                anyhow::bail!("Invalid file index in trans command");
-            }
-        } else {
-            anyhow::bail!("trans requires file index");
-        }
-    } else {
-        match line.to_lowercase().as_str() {
-            "record" | "r" => Action::Record { duration_secs: None },
-            "ok" | "e" => Action::Ok,
-            "stop" | "d" => Action::Stop,
-            "prev" | "a" => Action::Prev,
-            "next" | "f" => Action::Next,
-            "prev_sect" => Action::PrevSect,
-            "next_sect" => Action::NextSect,
-            "play" | "s" => Action::Play,
-            "mode_update" | "u" => Action::ModeUpdate,
-            "mode_insert" | "i" => Action::ModeInsert,
-            "compile" => Action::Compile,
-            "compile_cancel" => Action::CompileCancel,
-            "shutdown" | "quit" | "exit" => Action::Shutdown,
-            _ => {
-                anyhow::bail!("Unknown command: {line}");
-            }
-        }
-    };
-
-    Ok(action)
 }

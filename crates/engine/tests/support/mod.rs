@@ -4,7 +4,7 @@
 mod audio_backend;
 pub(crate) mod export_observer;
 
-use self::audio_backend::{AudioControl, SyntheticAudio};
+pub(crate) use self::audio_backend::{AudioControl, SyntheticAudio};
 use iamreader_engine::engine::{ChunkId, CommandFailure, CommandOutcome, Engine, EngineCommand, EngineEvent, EngineHandle};
 use iamreader_engine::project::{MarkerSettings, MetaData, Project, ProjectFile};
 use std::cell::{Cell, RefCell};

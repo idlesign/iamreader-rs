@@ -243,11 +243,13 @@ cargo run --locked -j 4 --bin iamreader -- --help
 - Использовать egui/eframe 0.37 одной совместимой версии без craft-ui.
 - Реализовать транспорт, список фрагментов, режимы A/U/I, подсказки, индикатор уровня и два waveform.
 - Виртуализировать список, использовать версии снимков и запрашивать repaint по событиям; ограничить частоту телеметрии.
+- Добавить в `EngineHandle` подписку на bounded/coalesced уведомления без GUI-типов: изменения снимка, подтверждения команд, экспорт и shutdown.
 - Сохранить переключение раскладок горячих клавиш и блокировку команд при вводе текста.
 
 **Файлы:**
 
 - `Cargo.toml`, `Cargo.lock`, `src/egui_ui/**`, `src/bin/iamreader-egui.rs` — новый frontend.
+- `crates/engine/src/engine/{event,runtime,snapshot,export_observer,action_handler}.rs` — независимые уведомления об изменениях для repaint без idle-таймера.
 
 **Документация:**
 
@@ -273,6 +275,7 @@ cargo test --locked -p iamreader-engine -j 4
 **Файлы:**
 
 - `tests/egui/main_window.rs`, `tests/egui/keyboard.rs` — сценарии интерфейса.
+- `crates/engine/tests/engine/notifications.rs` — bounded-подписки, idle, подтверждения, телеметрия и экспорт.
 
 **Команды проверки:**
 
@@ -328,18 +331,22 @@ cargo test --locked --workspace --all-features -j 4
 
 - Сделать egui основным `iamreader` binary после проверок этапа 13.
 - Удалить Slint-зависимости, кодогенерацию, адаптер и заменённые GUI-тесты.
+- Перенести иконку из Slint-ресурсов в egui, включить native clipboard и сохранить headless entry point.
+- Удалить legacy UI-действия; оставить разбор FIFO и разрешение его номеров в транспортном модуле без изменения синтаксиса.
 - Обновить упаковку и документацию запуска, не теряя существующие пользовательские изменения README.
+- Сохранить компоновку и оформление Slint: компактное меню, A/U/I, данные книги и главы, два waveform рядом, подсказки, поиск, таблицу с итогами. Обновить снимок на синтетическом проекте с текстами прежнего примера, без открытия устройств и пользовательского сеанса.
 - Сравнить release-размер, время запуска и idle/active CPU на одинаковых данных и окружении.
 - Выполнить окончательную проверку и подготовить коммит миграции с системной идентичностью Git.
 
 **Файлы:**
 
-- `Cargo.toml`, `Cargo.lock`, `build.rs`, `src/main.rs`, `src/ui/**`, `ui/**`, `README.md`, `bundle.sh` — переключение и очистка.
+- `Cargo.toml`, `Cargo.lock`, `build.rs`, `src/main.rs`, `src/ui/**`, `ui/**`, `src/egui_ui/**`, `src/fifo/**`, `tests/egui/**`, `tests/fifo.rs`, `README.md`, `docs/desktop.md`, `docs/screenshot.png`, `bundle.sh` — переключение и очистка.
 
 **Команды проверки:**
 
 ```bash
 cargo test --locked --workspace -j 4
+cargo test --locked --workspace --no-default-features -j 4
 cargo build --locked --release -j 4
 cargo run --locked --bin iamreader -- --help
 ```
