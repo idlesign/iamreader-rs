@@ -1,4 +1,4 @@
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let build_date = if let Ok(epoch) = std::env::var("SOURCE_DATE_EPOCH") {
         epoch
             .parse::<i64>()
@@ -10,7 +10,10 @@ fn main() {
         now_yyyymmdd()
     };
     println!("cargo:rustc-env=BUILD_DATE={}", build_date);
-    slint_build::compile("ui/main.slint").unwrap();
+    #[cfg(feature = "slint-ui")]
+    slint_build::compile("ui/main.slint")?;
+
+    Ok(())
 }
 
 fn now_yyyymmdd() -> String {

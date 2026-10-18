@@ -1,8 +1,8 @@
 //! GUI-owned drafts and acknowledged saves. No filesystem or audio work runs here.
 use super::ui::{MainWindow, UIState};
-use crate::project::dialog_edit::{validate_marker_form, validate_marker_forms, FieldError};
-use crate::project::{ChunkSettingsData, MarkerSettings, MarkerSettingsData, MetaData};
-use crate::utils::keyboard::{Action, DialogEdit};
+use iamreader_engine::project::dialog_edit::{validate_marker_form, validate_marker_forms, FieldError};
+use iamreader_engine::project::{ChunkSettingsData, MarkerSettings, MarkerSettingsData, MetaData};
+use crate::action::{Action, DialogEdit};
 use crossbeam_channel::Sender;
 use slint::{ComponentHandle, Model};
 use std::cell::RefCell;

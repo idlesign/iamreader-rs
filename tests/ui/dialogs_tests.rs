@@ -1,7 +1,7 @@
 use super::{DialogController, DialogReply};
-use crate::project::{MarkerSettings, MarkerSettingsData};
+use iamreader_engine::project::{MarkerSettings, MarkerSettingsData};
 use crate::ui::ui::{MainWindow, UIState};
-use crate::utils::keyboard::{Action, DialogEdit};
+use crate::action::{Action, DialogEdit};
 use crossbeam_channel::{Receiver, TryRecvError};
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Key, Platform, WindowAdapter, WindowEvent};

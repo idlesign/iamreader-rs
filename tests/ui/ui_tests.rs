@@ -1,6 +1,6 @@
 use super::*;
 use crate::ui::dialogs::DialogReply;
-use crate::utils::keyboard::DialogEdit;
+use crate::action::DialogEdit;
 use slint::platform::software_renderer::{MinimalSoftwareWindow, RepaintBufferType};
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::ComponentHandle;
@@ -45,10 +45,10 @@ fn next_dialog_save(actions: &Receiver<Action>) -> (u64, DialogEdit) {
 #[test]
 #[ignore = "requires a disposable IAMREADER_SMOKE_PROJECT and IAMREADER_SMOKE_IMAGE_DIR"]
 fn ui_supplied_project_smoke() {
-    use crate::audio::waveform::read_waveform_samples;
-    use crate::project::project::Project;
-    use crate::utils::paths::resolve_project_file;
-    use crate::utils::stats::{calculate_sizes, calculate_total_duration, get_free_space};
+    use iamreader_engine::audio::waveform::read_waveform_samples;
+    use iamreader_engine::project::project::Project;
+    use iamreader_engine::utils::paths::resolve_project_file;
+    use iamreader_engine::utils::stats::{calculate_sizes, calculate_total_duration, get_free_space};
     use std::io::Write;
 
     std::thread::spawn(|| {
@@ -366,8 +366,9 @@ fn ui_supplied_project_smoke() {
 
 #[test]
 fn ui_export_outcomes_remain_until_close() {
-    use crate::project::compile_progress::{CompileProgress, Operation, ProgressUnit};
-    use crate::project::export_workspace::ExportCancelled;
+    use crate::ui::export_adapter::SlintExportObserver;
+    use iamreader_engine::project::compile_progress::{CompileProgress, Operation, ProgressUnit};
+    use iamreader_engine::project::export_workspace::ExportCancelled;
     use std::io::Write;
 
     std::thread::spawn(|| {
@@ -431,8 +432,9 @@ fn ui_export_outcomes_remain_until_close() {
         window.invoke_dialog_compile_close();
         assert!(rx.is_empty());
         state.lock().unwrap().is_compiling = true;
+        let export_observer = SlintExportObserver::new(state.clone());
         let mut operation = CompileProgress::new(
-            Some(&state),
+            Some(&export_observer),
             None,
             Operation {
                 label: "Section 2/3 · Analyze level".into(),

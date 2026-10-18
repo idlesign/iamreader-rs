@@ -2450,9 +2450,26 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
- "cpal",
  "crossbeam-channel",
  "ctrlc",
+ "hound",
+ "iamreader-engine",
+ "libc",
+ "log",
+ "serde_json",
+ "slint",
+ "slint-build",
+ "tempfile",
+]
+
+[[package]]
+name = "iamreader-engine"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "cpal",
+ "crossbeam-channel",
  "hound",
  "id3",
  "libc",
@@ -2467,8 +2484,6 @@ dependencies = [
  "rust-embed",
  "serde",
  "serde_json",
- "slint",
- "slint-build",
  "tempfile",
  "whisper-rs",
 ]

@@ -1,10 +1,10 @@
-use crate::project::project::{KeyBindings, ProjectFile};
-use crate::utils::format::{
+use super::file_list::reverse_and_reindex_file_list;
+use iamreader_engine::project::project::{KeyBindings, ProjectFile};
+use iamreader_engine::utils::format::{
     current_and_prev_file_hints, format_duration, format_markers_with_ordinals_batch, format_size,
-    reverse_and_reindex_file_list,
 };
-use crate::utils::indexes::orig_to_ui_index;
-use crate::utils::keyboard::Action;
+use iamreader_engine::utils::indexes::orig_to_ui_index;
+use crate::action::Action;
 use anyhow::Result;
 use crossbeam_channel::{Receiver, Sender};
 use slint::Model;
@@ -53,7 +53,7 @@ pub struct UIState {
     pub section_titles: String,
     pub dialog_toc_list_text: String,
     pub dialog_save_result: Option<super::dialogs::DialogReply>,
-    pub dialog_marker_snapshot: std::collections::HashMap<String, crate::project::MarkerSettings>,
+    pub dialog_marker_snapshot: std::collections::HashMap<String, iamreader_engine::project::MarkerSettings>,
     // — диалог маркеров
     pub dialog_markers_open: bool,
     // — прогресс компиляции
@@ -152,6 +152,7 @@ impl UIState {
 }
 
 pub struct UI {
+    export_engine: std::rc::Rc<RefCell<Option<iamreader_engine::engine::EngineHandle>>>,
     _has_ui: bool,
     state: Arc<Mutex<UIState>>,
     window: Option<MainWindow>,
@@ -190,6 +191,11 @@ fn allows_project_actions(window_weak: &slint::Weak<MainWindow>) -> bool {
 }
 
 impl UI {
+    /// Connect immediate cancellation to the engine's publication gate.
+    pub fn attach_engine(&mut self, handle: iamreader_engine::engine::EngineHandle) {
+        *self.export_engine.borrow_mut() = Some(handle);
+    }
+
     /// pending_index_rx: ui_index для немедленного обновления в окне; прокрутка только если строка не видна.
     pub fn new(
         action_tx: Sender<Action>,
@@ -208,6 +214,7 @@ impl UI {
         let window_weak = window.as_weak();
 
         let state = Arc::new(Mutex::new(UIState::default()));
+        let export_engine = std::rc::Rc::new(RefCell::new(None::<iamreader_engine::engine::EngineHandle>));
         let dialogs =
             super::dialogs::DialogController::install(&window, state.clone(), action_tx.clone());
 
@@ -488,6 +495,7 @@ impl UI {
         let action_tx_for_compile_cancel = action_tx.clone();
         let state_for_compile_cancel = state.clone();
         let window_weak_for_compile_cancel = window_weak.clone();
+        let export_engine_for_cancel = export_engine.clone();
         window.on_dialog_compile_cancel(move || {
             if let Ok(mut state_guard) = state_for_compile_cancel.lock() {
                 if !state_guard.is_compiling
@@ -496,6 +504,12 @@ impl UI {
                     || state_guard.compile_publishing
                 {
                     return;
+                }
+                if let Some(engine) = export_engine_for_cancel.borrow().as_ref() {
+                    if let Err(error) = engine.request_export_cancellation() {
+                        state_guard.error_message = format!("Cannot request export cancellation: {error}");
+                        return;
+                    }
                 }
                 if let Err(error) = action_tx_for_compile_cancel.try_send(Action::CompileCancel) {
                     state_guard.error_message =
@@ -900,6 +914,7 @@ impl UI {
         let window_weak_clone = window_weak.clone();
 
         Ok(Self {
+            export_engine,
             _has_ui: true,
             state,
             window: Some(window),
@@ -1008,8 +1023,8 @@ impl UI {
     /// Загружает метаданные проекта в UIState и обновляет панель метаданных в окне.
     pub fn load_meta_from_project(
         &self,
-        meta: &crate::project::project::Meta,
-        settings: &crate::project::project::Settings,
+        meta: &iamreader_engine::project::project::Meta,
+        settings: &iamreader_engine::project::project::Settings,
     ) -> Result<()> {
         if let Ok(mut state_guard) = self.state.lock() {
             state_guard.dialog_project_title = meta.title.clone();
